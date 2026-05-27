@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import api from "@/lib/axios";
+import { useNotifications } from "@/lib/useNotifications";
 import {
   IconHome,
   IconDollar,
@@ -9,6 +10,7 @@ import {
   IconBuild,
   IconDoc,
   IconPhone,
+  IconBell,
   IconCaretSm,
   IconEye,
   IconEyeOff,
@@ -64,14 +66,15 @@ const NAV_ALL: NavItem[] = [
   { id: "pro",  label: "Prodaja",        icon: IconBars   },
   { id: "grad", label: "Gradilište",     icon: IconBuild  },
   { id: "adm",  label: "Administracija", icon: IconDoc    },
+  { id: "obv",  label: "Obaveštenja",   icon: IconBell   },
 ];
 
 function getAllowedNavIds(roles: string[]): string[] {
-  if (roles.includes("vlasnik"))              return ["dash", "fin", "pro", "grad", "adm"];
-  if (roles.includes("administrator"))        return ["adm"];
-  if (roles.includes("menadzer-finansija"))   return ["dash", "fin"];
-  if (roles.includes("menadzer-gradilista"))  return ["dash", "grad"];
-  return ["dash"];
+  if (roles.includes("vlasnik"))              return ["dash", "fin", "pro", "grad", "adm", "obv"];
+  if (roles.includes("administrator"))        return ["adm", "obv"];
+  if (roles.includes("menadzer-finansija"))   return ["dash", "fin", "obv"];
+  if (roles.includes("menadzer-gradilista"))  return ["dash", "grad", "obv"];
+  return ["dash", "obv"];
 }
 
 const CONTACTS = [
@@ -349,6 +352,7 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
   const [addUserOpen, setAddUserOpen]     = useState(false);
   const [toast, setToast]                 = useState<string | null>(null);
   const userCardRef                       = useRef<HTMLDivElement>(null);
+  const { unreadCount }                   = useNotifications();
 
   const isVlasnik = user?.roles.includes("vlasnik") ?? false;
   const allowedIds = getAllowedNavIds(user?.roles ?? []);
@@ -430,7 +434,23 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
                 <span style={{ color: isActive ? "var(--brand)" : "#6b7280", flexShrink: 0 }}>
                   <Ico w={20} h={20} />
                 </span>
-                <span>{item.label}</span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+                {item.id === "obv" && unreadCount > 0 && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      padding: "2px 7px",
+                      borderRadius: 999,
+                      background: isActive ? "#7c3aed" : "rgba(124,58,237,0.12)",
+                      color: isActive ? "#fff" : "#7c3aed",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
               </button>
             );
           })}

@@ -9,8 +9,14 @@ const api = axios.create({
   },
 });
 
-// Automatski dodaje Bearer token iz cookie-ja na svaki zahtjev
 api.interceptors.request.use((config) => {
+  // Kad šaljemo FormData, dozvolimo Axiosu/browseru da sami postave
+  // Content-Type: multipart/form-data; boundary=... (sa ispravnim boundary-jem)
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  }
+
+  // Automatski dodaje Bearer token iz cookie-ja na svaki zahtjev
   if (typeof document !== "undefined") {
     const token = getTokenFromCookie();
     if (token) {

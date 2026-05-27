@@ -1,4 +1,10 @@
-export type Sektor = "svi" | "finansije" | "prodaja" | "gradiliste" | "administracija";
+export type Sektor =
+  | "vlasnik"
+  | "svi"
+  | "finansije"
+  | "prodaja"
+  | "gradiliste"
+  | "administracija";
 
 export interface Notification {
   id: string;

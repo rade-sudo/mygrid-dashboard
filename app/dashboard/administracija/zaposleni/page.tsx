@@ -63,7 +63,6 @@ function employeeToForm(e: Employee): EmployeeFormData {
     salary_type:         e.salary_type,
     hourly_rate:         e.hourly_rate ?? "",
     fixed_salary:        e.fixed_salary ?? "",
-    is_on_vacation:      e.is_on_vacation,
   };
 }
 
@@ -407,21 +406,6 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
               </div>
             </div>
 
-            {/* ── 6. Godišnji odmor ── */}
-            <div style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 20 }}>
-              <div style={sectionTitleStyle}>Godišnji odmor</div>
-              <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", userSelect: "none" }}>
-                <input type="checkbox" {...register("is_on_vacation")} style={{ display: "none" }} id="vacation-cb" />
-                <VacationToggle checked={watch("is_on_vacation")} />
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: "#111418" }}>Na godišnjem odmoru</div>
-                  <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
-                    Zaposlen je trenutno na odmoru
-                  </div>
-                </div>
-              </label>
-            </div>
-
           </form>
         </div>
 
@@ -502,36 +486,6 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
           to   { transform: translateX(0); }
         }
       `}</style>
-    </div>
-  );
-}
-
-function VacationToggle({ checked }: { checked: boolean }) {
-  return (
-    <div
-      style={{
-        width: 42,
-        height: 24,
-        borderRadius: 12,
-        background: checked ? "#d97706" : "var(--border)",
-        position: "relative",
-        transition: "background .2s",
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: 3,
-          left: checked ? 21 : 3,
-          width: 18,
-          height: 18,
-          borderRadius: "50%",
-          background: "#fff",
-          transition: "left .2s",
-          boxShadow: "0 1px 3px rgba(0,0,0,.2)",
-        }}
-      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import type { Notification, Sektor } from "@/types/notifications";
 
 const SEKTOR_LABELS: Record<Sektor, string> = {
+  vlasnik: "Vlasnik",
   svi: "Svi sektori",
   finansije: "Finansije",
   prodaja: "Prodaja",
@@ -12,6 +13,7 @@ const SEKTOR_LABELS: Record<Sektor, string> = {
 };
 
 const SEKTOR_COLORS: Record<Sektor, string> = {
+  vlasnik: "#7c3aed",
   svi: "#2563eb",
   finansije: "#16a34a",
   prodaja: "#2563eb",

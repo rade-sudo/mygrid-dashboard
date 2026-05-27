@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { IconBell } from "@/components/ui/icons";
 import type { Notification } from "@/types/notifications";
 
@@ -18,21 +19,18 @@ interface Props {
   notifications: Notification[];
   unreadCount: number;
   readIds: string[];
-  onMarkRead: (id: string) => void;
   onMarkAllRead: () => void;
   onOpenSend: () => void;
-  onOpenHistory: () => void;
 }
 
 export default function NotificationBell({
   notifications,
   unreadCount,
   readIds,
-  onMarkRead,
   onMarkAllRead,
   onOpenSend,
-  onOpenHistory,
 }: Props) {
+  const router  = useRouter();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -46,6 +44,11 @@ export default function NotificationBell({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const goToPage = () => {
+    setOpen(false);
+    router.push("/dashboard/obavjestenja");
+  };
+
   const recentNotifs = notifications.slice(0, 5);
 
   return (
@@ -53,12 +56,18 @@ export default function NotificationBell({
       {/* Bell button */}
       <button
         aria-label="Obaveštenja"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          const willOpen = !open;
+          setOpen(willOpen);
+          if (willOpen && unreadCount > 0) onMarkAllRead();
+        }}
         style={{
           width: 42,
           height: 42,
           borderRadius: 12,
-          border: open ? "1px solid rgba(124,58,237,0.35)" : "1px solid var(--border)",
+          border: open
+            ? "1px solid rgba(124,58,237,0.35)"
+            : "1px solid var(--border)",
           background: open ? "rgba(124,58,237,0.06)" : "#fff",
           display: "grid",
           placeItems: "center",
@@ -79,7 +88,7 @@ export default function NotificationBell({
               minWidth: unreadCount > 9 ? 16 : 8,
               height: unreadCount > 9 ? 16 : 8,
               borderRadius: 999,
-              background: unreadCount > 0 ? "#7c3aed" : "var(--brand)",
+              background: "#7c3aed",
               boxShadow: "0 0 0 2px #fff",
               display: "flex",
               alignItems: "center",
@@ -112,7 +121,7 @@ export default function NotificationBell({
             zIndex: 200,
           }}
         >
-          {/* Dropdown header */}
+          {/* Header */}
           <div
             style={{
               padding: "14px 16px 12px",
@@ -151,7 +160,7 @@ export default function NotificationBell({
             </div>
             {unreadCount > 0 && (
               <button
-                onClick={() => { onMarkAllRead(); }}
+                onClick={onMarkAllRead}
                 style={{
                   fontSize: 11.5,
                   color: "#8a8f98",
@@ -168,7 +177,14 @@ export default function NotificationBell({
           </div>
 
           {/* Action buttons */}
-          <div style={{ padding: "8px 8px 4px", display: "flex", flexDirection: "column", gap: 2 }}>
+          <div
+            style={{
+              padding: "8px 8px 4px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
             <button
               onClick={() => { setOpen(false); onOpenSend(); }}
               style={{
@@ -185,8 +201,12 @@ export default function NotificationBell({
                 fontFamily: "inherit",
                 transition: "background .12s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(124,58,237,0.06)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(124,58,237,0.06)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "transparent")
+              }
             >
               <div
                 style={{
@@ -216,7 +236,7 @@ export default function NotificationBell({
             </button>
 
             <button
-              onClick={() => { setOpen(false); onOpenHistory(); }}
+              onClick={goToPage}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -231,8 +251,12 @@ export default function NotificationBell({
                 fontFamily: "inherit",
                 transition: "background .12s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(37,99,235,0.05)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "rgba(37,99,235,0.05)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "transparent")
+              }
             >
               <div
                 style={{
@@ -262,7 +286,7 @@ export default function NotificationBell({
             </button>
           </div>
 
-          {/* Divider + recent list */}
+          {/* Recent list */}
           {recentNotifs.length > 0 && (
             <>
               <div
@@ -284,7 +308,7 @@ export default function NotificationBell({
                   return (
                     <button
                       key={n.id}
-                      onClick={() => { onMarkRead(n.id); setOpen(false); onOpenHistory(); }}
+                      onClick={goToPage}
                       style={{
                         display: "flex",
                         alignItems: "flex-start",
@@ -299,17 +323,26 @@ export default function NotificationBell({
                         fontFamily: "inherit",
                         transition: "background .1s",
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#f5f5f5")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = isUnread ? "#fafbff" : "transparent")}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background = "#f5f5f5")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.background = isUnread
+                          ? "#fafbff"
+                          : "transparent")
+                      }
                     >
-                      {/* Indicator */}
                       <div style={{ paddingTop: 4, flexShrink: 0 }}>
                         <div
                           style={{
                             width: 7,
                             height: 7,
                             borderRadius: "50%",
-                            background: n.urgent ? "#dc2626" : isUnread ? "#7c3aed" : "#e5e7eb",
+                            background: n.urgent
+                              ? "#dc2626"
+                              : isUnread
+                              ? "#7c3aed"
+                              : "#e5e7eb",
                           }}
                         />
                       </div>
@@ -325,7 +358,8 @@ export default function NotificationBell({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {n.urgent && "⚠ "}{n.title}
+                          {n.urgent && "⚠ "}
+                          {n.title}
                         </div>
                         {n.message && (
                           <div
@@ -351,7 +385,7 @@ export default function NotificationBell({
               </div>
               {notifications.length > 5 && (
                 <button
-                  onClick={() => { setOpen(false); onOpenHistory(); }}
+                  onClick={goToPage}
                   style={{
                     width: "100%",
                     padding: "10px",
@@ -365,8 +399,12 @@ export default function NotificationBell({
                     fontFamily: "inherit",
                     transition: "background .1s",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#fafbff")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "#fafbff")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
                 >
                   Prikaži sva ({notifications.length}) →
                 </button>

@@ -1,107 +1,67 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import api from "@/lib/axios";
 import type { Notification, Sektor } from "@/types/notifications";
 
-const STORAGE_KEY = "mg_notifications";
-const READ_KEY = "mg_notif_read";
+const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
+export const NOTIFICATIONS_QK = ["notifications", TENANT] as const;
 
-function load<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+interface ApiNotification {
+  id: number;
+  sender_id: number;
+  sender_name: string;
+  audience: string[];
+  title: string;
+  content: string;
+  is_read: boolean;
+  urgent: boolean;
+  is_task: boolean;
+  task_done: boolean;
+  created_at: string;
 }
 
-function save<T>(key: string, val: T) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(val));
+function toLocal(n: ApiNotification): Notification {
+  return {
+    id: String(n.id),
+    title: n.title,
+    message: n.content,
+    audience: n.audience as Sektor[],
+    urgent: n.urgent,
+    isTask: n.is_task,
+    taskDone: n.task_done,
+    createdAt: n.created_at,
+    sentBy: n.sender_name,
+  };
 }
 
 export function useNotifications() {
-  const [notifications, setNotifications] = useState<Notification[]>(() =>
-    load<Notification[]>(STORAGE_KEY, [])
-  );
-  const [readIds, setReadIds] = useState<string[]>(() =>
-    load<string[]>(READ_KEY, [])
-  );
+  const qc = useQueryClient();
 
-  // Sync to localStorage whenever state changes
-  useEffect(() => {
-    save(STORAGE_KEY, notifications);
-  }, [notifications]);
+  const { data: apiData = [] } = useQuery<ApiNotification[]>({
+    queryKey: NOTIFICATIONS_QK,
+    queryFn: ({ signal }) =>
+      api.get(`/api/${TENANT}/notifications`, { signal }).then((r) => r.data),
+    staleTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+  });
 
-  useEffect(() => {
-    save(READ_KEY, readIds);
-  }, [readIds]);
+  const notifications = apiData.map(toLocal);
+  const readIds = apiData.filter((n) => n.is_read).map((n) => String(n.id));
+  const unreadCount = apiData.filter((n) => !n.is_read).length;
 
-  const send = useCallback(
-    (
-      title: string,
-      message: string,
-      audience: Sektor[],
-      urgent: boolean,
-      isTask: boolean
-    ) => {
-      const newNotif: Notification = {
-        id: Date.now().toString(),
-        title,
-        message,
-        audience,
-        urgent,
-        isTask,
-        taskDone: false,
-        createdAt: new Date().toISOString(),
-        sentBy: "Milan Jovanović",
-      };
-      setNotifications((prev) => {
-        const updated = [newNotif, ...prev].slice(0, 200);
-        return updated;
-      });
+  const markAllReadMut = useMutation({
+    mutationFn: () =>
+      api.patch(`/api/${TENANT}/notifications/read-all`).then((r) => r.data),
+    onMutate: () => {
+      qc.setQueryData<ApiNotification[]>(NOTIFICATIONS_QK, (old) =>
+        (old ?? []).map((n) => ({ ...n, is_read: true }))
+      );
     },
-    []
-  );
+  });
 
-  const markRead = useCallback((id: string) => {
-    setReadIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  }, []);
+  const markAllRead = () => markAllReadMut.mutate();
 
-  const markAllRead = useCallback(() => {
-    setReadIds((prev) => {
-      const allIds = load<Notification[]>(STORAGE_KEY, []).map((n) => n.id);
-      const merged = Array.from(new Set([...prev, ...allIds]));
-      return merged;
-    });
-  }, []);
-
-  const toggleTaskDone = useCallback((id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, taskDone: !n.taskDone } : n))
-    );
-  }, []);
-
-  const deleteNotif = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  }, []);
-
-  const unreadCount = notifications.filter((n) => !readIds.includes(n.id)).length;
-
-  const urgentUnread = notifications.filter(
-    (n) => n.urgent && !readIds.includes(n.id)
-  );
-
-  return {
-    notifications,
-    unreadCount,
-    urgentUnread,
-    readIds,
-    send,
-    markRead,
-    markAllRead,
-    toggleTaskDone,
-    deleteNotif,
-  };
+  return { notifications, readIds, unreadCount, markAllRead };
 }

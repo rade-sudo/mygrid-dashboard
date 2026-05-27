@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 // Prefiks ruta kojima svaka uloga ima pristup
 const ROLE_ROUTES: Record<string, string[]> = {
   vlasnik:              ["/dashboard"],
-  administrator:        ["/dashboard/administracija"],
-  "menadzer-finansija": ["/dashboard/finansije"],
-  "menadzer-gradilista":["/dashboard/gradiliste"],
+  administrator:        ["/dashboard/administracija", "/dashboard/obavjestenja"],
+  "menadzer-finansija": ["/dashboard/finansije",      "/dashboard/obavjestenja"],
+  "menadzer-gradilista":["/dashboard/gradiliste",     "/dashboard/obavjestenja"],
 };
 
 // Početna stranica po ulozi

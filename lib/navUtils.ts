@@ -4,6 +4,7 @@ export const NAV_ROUTES: Record<string, string> = {
   pro:  "/dashboard/prodaja",
   grad: "/dashboard/gradiliste",
   adm:  "/dashboard/administracija",
+  obv:  "/dashboard/obavjestenja",
 };
 
 export function getNavRoute(id: string): string {

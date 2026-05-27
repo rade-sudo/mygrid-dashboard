@@ -42,7 +42,6 @@ export interface EmployeeFormData {
   salary_type: SalaryType;
   hourly_rate: string;
   fixed_salary: string;
-  is_on_vacation: boolean;
 }
 
 export const EMPTY_FORM: EmployeeFormData = {
@@ -62,5 +61,4 @@ export const EMPTY_FORM: EmployeeFormData = {
   salary_type: "fiksna_plata",
   hourly_rate: "",
   fixed_salary: "",
-  is_on_vacation: false,
 };

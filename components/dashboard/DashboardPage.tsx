@@ -102,6 +102,7 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
     if (id === "fin") { router.push("/dashboard/finansije"); return; }
     if (id === "pro") { router.push("/dashboard/prodaja"); return; }
     if (id === "grad") { router.push("/dashboard/gradiliste"); return; }
+    if (id === "obv") { router.push("/dashboard/obavjestenja"); return; }
     setActiveNav(id);
     setActiveTab("dash");
   };
