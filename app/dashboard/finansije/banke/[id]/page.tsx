@@ -1,9 +1,10 @@
 "use client";
 
-import React, { use, useEffect, useRef, useState } from "react";
+import React, { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
+import DatePicker from "@/components/ui/DatePicker";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type { Bank, BankTransaction, TransactionFormData } from "@/types/bank";
@@ -125,7 +126,6 @@ function TransactionSlideOver({
   editing: BankTransaction | null;
   onClose: () => void;
 }) {
-  const firstRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
 
   const {
@@ -134,6 +134,7 @@ function TransactionSlideOver({
     reset,
     watch,
     setValue,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<TransactionFormData>({ defaultValues: EMPTY_TRANSACTION_FORM });
 
@@ -142,7 +143,6 @@ function TransactionSlideOver({
   useEffect(() => {
     if (open) {
       reset(editing ? transactionToForm(editing) : EMPTY_TRANSACTION_FORM);
-      setTimeout(() => firstRef.current?.focus(), 80);
     }
   }, [open, editing, reset]);
 
@@ -232,16 +232,13 @@ function TransactionSlideOver({
           {/* Datum */}
           <div>
             <label style={labelStyle}>Datum</label>
-            <input
-              type="date"
-              {...register("date", { required: "Datum je obavezan" })}
-              ref={(e) => {
-                register("date").ref(e);
-                (firstRef as React.MutableRefObject<HTMLInputElement | null>).current = e;
-              }}
-              style={inputStyle}
-              onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+            <Controller
+              name="date"
+              control={control}
+              rules={{ required: "Datum je obavezan" }}
+              render={({ field }) => (
+                <DatePicker value={field.value} onChange={field.onChange} />
+              )}
             />
             {errors.date && <p style={errStyle}>{errors.date.message}</p>}
           </div>

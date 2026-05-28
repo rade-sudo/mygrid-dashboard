@@ -1,38 +1,34 @@
 export default function PerspectiveGrid() {
   return (
-    <svg
+    <div
+      aria-hidden="true"
       style={{
         position: "absolute",
         inset: 0,
+        zIndex: -1,
         pointerEvents: "none",
-        opacity: 0.9,
-        width: "100%",
-        height: "100%",
+        overflow: "hidden",
       }}
-      viewBox="0 0 1200 160"
-      preserveAspectRatio="xMidYMid slice"
-      aria-hidden="true"
     >
-      <defs>
-        <linearGradient id="fade" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="#bcd0ff" stopOpacity="0" />
-          <stop offset=".55" stopColor="#bcd0ff" stopOpacity=".55" />
-          <stop offset="1" stopColor="#bcd0ff" stopOpacity=".1" />
-        </linearGradient>
-        <linearGradient id="fadeH" x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0" stopColor="#ffffff" stopOpacity="0" />
-          <stop offset=".5" stopColor="#bcd0ff" stopOpacity=".55" />
-          <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {Array.from({ length: 7 }).map((_, i) => {
-        const y = 80 + i * 22 + i * i * 1.2;
-        return <line key={"h" + i} x1="0" y1={y} x2="1200" y2={y} stroke="url(#fadeH)" strokeWidth=".7" />;
-      })}
-      {Array.from({ length: 21 }).map((_, i) => {
-        const x = (i / 20) * 1200;
-        return <line key={"v" + i} x1={x} y1="160" x2="600" y2="70" stroke="url(#fade)" strokeWidth=".7" />;
-      })}
-    </svg>
+      <div
+        style={{
+          position: "absolute",
+          left: "-100%",
+          right: "-100%",
+          top: 0,
+          height: "400%",
+          backgroundImage: [
+            "linear-gradient(to right, rgba(0,82,255,0.16) 1px, transparent 1px)",
+            "linear-gradient(to bottom, rgba(0,82,255,0.16) 1px, transparent 1px)",
+          ].join(", "),
+          backgroundSize: "50px 50px",
+          transform: "perspective(1500px) rotateX(55deg)",
+          transformOrigin: "50% 0%",
+          animation: "grid-move 1.5s linear infinite",
+          maskImage: "linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.5) 25%, black 50%)",
+          WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.5) 25%, black 50%)",
+        }}
+      />
+    </div>
   );
 }

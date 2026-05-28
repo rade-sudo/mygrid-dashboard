@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type { Contract, ContractFormData } from "@/types/contract";
 import { CONTRACT_TYPES, EMPTY_CONTRACT_FORM } from "@/types/contract";
+import DatePicker from "@/components/ui/DatePicker";
+import FormDropdown from "@/components/ui/FormDropdown";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const BASE = `/api/${TENANT}/contracts`;
@@ -152,19 +154,17 @@ interface SlideOverProps {
 }
 
 function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) {
-  const firstRef = useRef<HTMLInputElement>(null);
-
   const {
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ContractFormData>({ defaultValues: EMPTY_CONTRACT_FORM });
 
   useEffect(() => {
     if (open) {
       reset(editing ? contractToForm(editing) : EMPTY_CONTRACT_FORM);
-      setTimeout(() => firstRef.current?.focus(), 80);
     }
   }, [open, editing, reset]);
 
@@ -250,16 +250,13 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Datum ugovora</label>
-              <input
-                type="date"
-                {...register("contract_date", { required: "Datum je obavezan" })}
-                ref={(e) => {
-                  register("contract_date").ref(e);
-                  (firstRef as React.MutableRefObject<HTMLInputElement | null>).current = e;
-                }}
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+              <Controller
+                name="contract_date"
+                control={control}
+                rules={{ required: "Datum je obavezan" }}
+                render={({ field }) => (
+                  <DatePicker value={field.value} onChange={field.onChange} />
+                )}
               />
               {errors.contract_date && <p style={errStyle}>{errors.contract_date.message}</p>}
             </div>
@@ -268,12 +265,12 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
                 Datum isteka{" "}
                 <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opcionalno)</span>
               </label>
-              <input
-                type="date"
-                {...register("contract_end_date")}
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+              <Controller
+                name="contract_end_date"
+                control={control}
+                render={({ field }) => (
+                  <DatePicker value={field.value} onChange={field.onChange} />
+                )}
               />
               {errors.contract_end_date && <p style={errStyle}>{errors.contract_end_date.message}</p>}
             </div>
@@ -282,16 +279,18 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
           {/* Tip ugovora */}
           <div>
             <label style={labelStyle}>Tip ugovora</label>
-            <select
-              {...register("contract_type", { required: "Tip ugovora je obavezan" })}
-              style={{ ...inputStyle, cursor: "pointer" }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-            >
-              {CONTRACT_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
+            <Controller
+              name="contract_type"
+              control={control}
+              rules={{ required: "Tip ugovora je obavezan" }}
+              render={({ field }) => (
+                <FormDropdown
+                  value={field.value}
+                  onChange={field.onChange}
+                  options={CONTRACT_TYPES.map((t) => ({ value: t, label: t }))}
+                />
+              )}
+            />
             {errors.contract_type && <p style={errStyle}>{errors.contract_type.message}</p>}
           </div>
 

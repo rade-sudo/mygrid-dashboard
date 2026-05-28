@@ -169,8 +169,11 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
           flexDirection: "column",
           minWidth: 0,
           background: "#ffffff",
+          position: "relative",
+          isolation: "isolate",
         }}
       >
+        <PerspectiveGrid />
         <TopBar onMenu={() => setMenuOpen(true)} />
 
         {/* Hero wrapper: no overflow so the dropdown isn't clipped */}
@@ -182,7 +185,6 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
               overflow: "hidden",
             }}
           >
-            <PerspectiveGrid />
             <h1
               style={{
                 fontSize: "var(--hero-h1, 32px)",

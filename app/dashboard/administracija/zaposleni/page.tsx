@@ -2,8 +2,11 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import PageShell from "@/components/layout/PageShell";
+import { IconCaretSm } from "@/components/ui/icons";
+import DatePicker from "@/components/ui/DatePicker";
+import FormDropdown from "@/components/ui/FormDropdown";
 import api from "@/lib/axios";
 import type { Employee, EmployeeFormData, Sector, SalaryType } from "@/types/employee";
 import { EMPTY_FORM } from "@/types/employee";
@@ -45,6 +48,124 @@ function StatusBadge({ employee }: { employee: Employee }) {
   return <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600, color: "#16a34a", background: "#e8f6ee" }}>Aktivan</span>;
 }
 
+function FilterDropdown({
+  value,
+  onChange,
+  placeholder,
+  options,
+  icon,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  icon?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const active = value !== "";
+  const currentLabel = active
+    ? (options.find((o) => o.value === value)?.label ?? placeholder)
+    : placeholder;
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "10px 14px",
+          border: `1px solid ${active || open ? "var(--violet)" : "var(--border)"}`,
+          background: active ? "var(--violet-soft)" : open ? "#faf8ff" : "#fff",
+          borderRadius: 12,
+          fontSize: 14,
+          fontWeight: 500,
+          color: active || open ? "var(--violet)" : "#2a2f37",
+          boxShadow: "var(--shadow-card)",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {icon}
+        <span>{currentLabel}</span>
+        <span style={{
+          display: "inline-flex",
+          color: active || open ? "var(--violet)" : "#9aa0a6",
+          transform: open ? "rotate(180deg)" : "rotate(0deg)",
+          transition: "transform .2s",
+        }}>
+          <IconCaretSm />
+        </span>
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute",
+          top: "calc(100% + 6px)",
+          left: 0,
+          background: "#fff",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          boxShadow: "0 8px 32px rgba(16,24,40,.1), 0 2px 8px rgba(16,24,40,.06)",
+          padding: "6px",
+          minWidth: 180,
+          zIndex: 60,
+        }}>
+          {options.map((opt) => {
+            const isSelected = opt.value === value;
+            const isHov = hoveredItem === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                onMouseEnter={() => setHoveredItem(opt.value)}
+                onMouseLeave={() => setHoveredItem(null)}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 12px",
+                  borderRadius: 9,
+                  border: "none",
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                  fontWeight: isSelected ? 600 : 400,
+                  background: isSelected
+                    ? "var(--violet-soft)"
+                    : isHov ? "#f8f9fa" : "transparent",
+                  color: isSelected ? "var(--violet)" : isHov ? "#111418" : "#374151",
+                  transition: "background .1s, color .1s",
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function employeeToForm(e: Employee): EmployeeFormData {
   return {
     status:              e.status,
@@ -82,11 +203,6 @@ const inputStyle: React.CSSProperties = {
   transition: "border-color .14s",
 };
 
-const selectStyle: React.CSSProperties = {
-  ...inputStyle,
-  appearance: "none" as React.CSSProperties["appearance"],
-  cursor: "pointer",
-};
 
 const labelStyle: React.CSSProperties = {
   display: "block",
@@ -104,6 +220,7 @@ const sectionTitleStyle: React.CSSProperties = {
   color: "var(--muted)",
   marginBottom: 12,
 };
+
 
 function FormField({
   label,
@@ -125,6 +242,7 @@ function FormField({
   );
 }
 
+
 // ─── Employee Form (Slide-over) ───────────────────────────────────────────────
 
 interface EmployeeFormProps {
@@ -143,6 +261,7 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
     handleSubmit,
     watch,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<EmployeeFormData>({ defaultValues: EMPTY_FORM });
 
@@ -274,10 +393,20 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
                 />
               </FormField>
               <FormField label="Status" error={errors.status?.message}>
-                <select {...register("status")} style={selectStyle}>
-                  <option value="active">Aktivan</option>
-                  <option value="inactive">Neaktivan</option>
-                </select>
+                <Controller
+                  name="status"
+                  control={control}
+                  render={({ field }) => (
+                    <FormDropdown
+                      value={field.value}
+                      onChange={field.onChange}
+                      options={[
+                        { value: "active",   label: "Aktivan" },
+                        { value: "inactive", label: "Neaktivan" },
+                      ]}
+                    />
+                  )}
+                />
               </FormField>
               <FormField label="Adresa" span2>
                 <input
@@ -319,12 +448,23 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
               <div style={sectionTitleStyle}>Posao</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 16px", marginBottom: 28 }}>
                 <FormField label="Sektor *" error={errors.sector?.message}>
-                  <select {...register("sector", { required: true })} style={selectStyle}>
-                    <option value="gradiliste">Gradilište</option>
-                    <option value="pumpa">Pumpa</option>
-                    <option value="kancelarija">Kancelarija</option>
-                    <option value="ostalo">Ostalo</option>
-                  </select>
+                  <Controller
+                    name="sector"
+                    control={control}
+                    rules={{ required: true }}
+                    render={({ field }) => (
+                      <FormDropdown
+                        value={field.value}
+                        onChange={field.onChange}
+                        options={[
+                          { value: "gradiliste", label: "Gradilište" },
+                          { value: "pumpa",      label: "Pumpa" },
+                          { value: "kancelarija",label: "Kancelarija" },
+                          { value: "ostalo",     label: "Ostalo" },
+                        ]}
+                      />
+                    )}
+                  />
                 </FormField>
                 <FormField label="Pozicija *" error={errors.position?.message ?? apiErrors?.position?.[0]}>
                   <input
@@ -336,10 +476,12 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
                   />
                 </FormField>
                 <FormField label="Datum zaposlenja">
-                  <input
-                    {...register("employment_date")}
-                    type="date"
-                    style={inputStyle}
+                  <Controller
+                    name="employment_date"
+                    control={control}
+                    render={({ field }) => (
+                      <DatePicker value={field.value} onChange={field.onChange} />
+                    )}
                   />
                 </FormField>
               </div>
@@ -358,10 +500,22 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
                   />
                 </FormField>
                 <FormField label="Datum početka" error={apiErrors?.contract_start_date?.[0]}>
-                  <input {...register("contract_start_date")} type="date" style={inputStyle} />
+                  <Controller
+                    name="contract_start_date"
+                    control={control}
+                    render={({ field }) => (
+                      <DatePicker value={field.value} onChange={field.onChange} />
+                    )}
+                  />
                 </FormField>
                 <FormField label="Datum isteka" error={apiErrors?.contract_end_date?.[0]}>
-                  <input {...register("contract_end_date")} type="date" style={inputStyle} />
+                  <Controller
+                    name="contract_end_date"
+                    control={control}
+                    render={({ field }) => (
+                      <DatePicker value={field.value} onChange={field.onChange} />
+                    )}
+                  />
                 </FormField>
               </div>
             </div>
@@ -371,10 +525,21 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
               <div style={sectionTitleStyle}>Plata</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 16px", marginBottom: 28 }}>
                 <FormField label="Tip plate *" error={errors.salary_type?.message}>
-                  <select {...register("salary_type", { required: true })} style={selectStyle}>
-                    <option value="fiksna_plata">Fiksna plata</option>
-                    <option value="satnica">Satnica</option>
-                  </select>
+                  <Controller
+                    name="salary_type"
+                    control={control}
+                    rules={{ required: true }}
+                    render={({ field }) => (
+                      <FormDropdown
+                        value={field.value}
+                        onChange={field.onChange}
+                        options={[
+                          { value: "fiksna_plata", label: "Fiksna plata" },
+                          { value: "satnica",      label: "Satnica" },
+                        ]}
+                      />
+                    )}
+                  />
                 </FormField>
                 {salaryType === "satnica" ? (
                   <FormField label="Satnica (KM/h)" error={apiErrors?.hourly_rate?.[0]}>
@@ -495,6 +660,7 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
 export default function ZaposleniPage() {
   const [search, setSearch] = useState("");
   const [sectorFilter, setSectorFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
 
@@ -506,6 +672,14 @@ export default function ZaposleniPage() {
       if (sectorFilter) params.set("sector", sectorFilter);
       return api.get(`${BASE}?${params}`).then((r) => r.data);
     },
+  });
+
+  const filteredEmployees = employees.filter((emp) => {
+    if (!statusFilter) return true;
+    if (statusFilter === "aktivan") return !emp.is_on_vacation && emp.status === "active";
+    if (statusFilter === "na_odmoru") return emp.is_on_vacation === true;
+    if (statusFilter === "neaktivan") return emp.status === "inactive";
+    return true;
   });
 
   const openNew = () => { setEditEmployee(null); setFormOpen(true); };
@@ -550,7 +724,7 @@ export default function ZaposleniPage() {
       <div style={{ padding: "20px 32px 110px", display: "flex", flexDirection: "column", gap: 16 }}>
 
         {/* Filters row */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ position: "relative", flex: "1 1 240px", maxWidth: 340 }}>
             <svg
               width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -568,17 +742,39 @@ export default function ZaposleniPage() {
               onBlur={(e) => { e.target.style.borderColor = "var(--border)"; }}
             />
           </div>
-          <select
+          <FilterDropdown
             value={sectorFilter}
-            onChange={(e) => setSectorFilter(e.target.value)}
-            style={{ ...selectStyle, flex: "0 0 auto", width: 160 }}
-          >
-            <option value="">Svi sektori</option>
-            <option value="gradiliste">Gradilište</option>
-            <option value="pumpa">Pumpa</option>
-            <option value="kancelarija">Kancelarija</option>
-            <option value="ostalo">Ostalo</option>
-          </select>
+            onChange={setSectorFilter}
+            placeholder="Svi sektori"
+            icon={
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 5h18M6 12h12M9 19h6" />
+              </svg>
+            }
+            options={[
+              { value: "", label: "Svi sektori" },
+              { value: "gradiliste", label: "Gradilište" },
+              { value: "pumpa", label: "Pumpa" },
+              { value: "kancelarija", label: "Kancelarija" },
+              { value: "ostalo", label: "Ostalo" },
+            ]}
+          />
+          <FilterDropdown
+            value={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="Svi statusi"
+            icon={
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            }
+            options={[
+              { value: "", label: "Svi statusi" },
+              { value: "aktivan",   label: "Aktivan" },
+              { value: "na_odmoru", label: "Na odmoru" },
+              { value: "neaktivan", label: "Neaktivan" },
+            ]}
+          />
         </div>
 
         {/* Table */}
@@ -616,18 +812,18 @@ export default function ZaposleniPage() {
                     ))}
                   </tr>
                 ))
-              ) : employees.length === 0 ? (
+              ) : filteredEmployees.length === 0 ? (
                 <tr>
                   <td colSpan={6} style={{ padding: "48px 16px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
-                    {search || sectorFilter ? "Nema rezultata za zadatu pretragu." : "Još nema zaposlenih. Dodajte prvog zaposlenog."}
+                    {search || sectorFilter || statusFilter ? "Nema rezultata za zadatu pretragu." : "Još nema zaposlenih. Dodajte prvog zaposlenog."}
                   </td>
                 </tr>
               ) : (
-                employees.map((emp, idx) => (
+                filteredEmployees.map((emp, idx) => (
                   <tr
                     key={emp.id}
                     style={{
-                      borderBottom: idx < employees.length - 1 ? "1px solid var(--border-soft)" : "none",
+                      borderBottom: idx < filteredEmployees.length - 1 ? "1px solid var(--border-soft)" : "none",
                       transition: "background .1s",
                     }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafbff"; }}
@@ -680,9 +876,12 @@ export default function ZaposleniPage() {
           </table>
         </div>
 
-        {!isLoading && employees.length > 0 && (
+        {!isLoading && filteredEmployees.length > 0 && (
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            {employees.length} {employees.length === 1 ? "zaposleni" : "zaposlenih"}
+            {filteredEmployees.length} {filteredEmployees.length === 1 ? "zaposleni" : "zaposlenih"}
+            {(statusFilter || sectorFilter) && filteredEmployees.length !== employees.length
+              ? ` (filtrirano od ${employees.length})`
+              : ""}
           </div>
         )}
       </div>

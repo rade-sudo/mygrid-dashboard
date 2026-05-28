@@ -1,3 +1,5 @@
+"use client";
+import { useState } from "react";
 import CardHead from "@/components/dashboard/CardHead";
 import { IconCard, IconInvoice, IconActivity } from "@/components/ui/icons";
 
@@ -18,14 +20,23 @@ function KpiCard({
   sub: string;
   unit?: string;
 }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        background: "#fff",
-        border: "1px solid var(--border)",
+        background: hovered ? "rgba(255, 255, 255, 0.92)" : "rgba(255, 255, 255, 0.75)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        border: "1px solid rgba(255, 255, 255, 0.2)",
         borderRadius: 16,
         padding: "20px 22px",
-        boxShadow: "var(--shadow-card)",
+        boxShadow: hovered
+          ? "0 8px 32px rgba(0,82,255,.12), 0 4px 12px rgba(16,24,40,.08)"
+          : "var(--shadow-card)",
+        transform: hovered ? "translateY(-2px)" : "none",
+        transition: "transform .2s ease, box-shadow .2s ease, background .2s ease",
         minHeight: 168,
         display: "flex",
         flexDirection: "column",
@@ -68,14 +79,23 @@ export function BankBalanceCard() {
 }
 
 export function SupplierSaldoCard() {
+  const [hovered, setHovered] = useState(false);
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        background: "#fff",
-        border: "1px solid var(--border)",
+        background: hovered ? "rgba(255, 255, 255, 0.92)" : "rgba(255, 255, 255, 0.75)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        border: "1px solid rgba(255, 255, 255, 0.2)",
         borderRadius: 16,
         padding: "20px 22px",
-        boxShadow: "var(--shadow-card)",
+        boxShadow: hovered
+          ? "0 8px 32px rgba(0,82,255,.12), 0 4px 12px rgba(16,24,40,.08)"
+          : "var(--shadow-card)",
+        transform: hovered ? "translateY(-2px)" : "none",
+        transition: "transform .2s ease, box-shadow .2s ease, background .2s ease",
         minHeight: 168,
         display: "flex",
         flexDirection: "column",

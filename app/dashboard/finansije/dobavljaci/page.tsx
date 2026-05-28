@@ -180,11 +180,11 @@ function SupplierSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>PIB <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opciono)</span></label>
-              <input type="text" placeholder="123456789" {...register("pib")} style={{ ...inputStyle, fontFamily: "'Courier New', monospace" }} onFocus={(e) => (e.target.style.borderColor = "var(--green)")} onBlur={(e) => (e.target.style.borderColor = "var(--border)")} />
+              <input type="text" placeholder="123456789" {...register("pib")} style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }} onFocus={(e) => (e.target.style.borderColor = "var(--green)")} onBlur={(e) => (e.target.style.borderColor = "var(--border)")} />
             </div>
             <div>
               <label style={labelStyle}>Matični broj <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opciono)</span></label>
-              <input type="text" placeholder="12345678" {...register("maticni_broj")} style={{ ...inputStyle, fontFamily: "'Courier New', monospace" }} onFocus={(e) => (e.target.style.borderColor = "var(--green)")} onBlur={(e) => (e.target.style.borderColor = "var(--border)")} />
+              <input type="text" placeholder="12345678" {...register("maticni_broj")} style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }} onFocus={(e) => (e.target.style.borderColor = "var(--green)")} onBlur={(e) => (e.target.style.borderColor = "var(--border)")} />
             </div>
           </div>
 
@@ -325,10 +325,10 @@ export default function DobavljaciPage() {
                       onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
                     >
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{s.name}</td>
-                      <td style={{ ...tdStyle, fontFamily: "'Courier New', monospace", fontSize: 13 }}>
+                      <td style={{ ...tdStyle, fontFamily: "var(--font-geist-mono), monospace", fontSize: 13 }}>
                         {s.pib ?? <span style={{ color: "var(--muted-2)" }}>—</span>}
                       </td>
-                      <td style={{ ...tdStyle, fontFamily: "'Courier New', monospace", fontSize: 13 }}>
+                      <td style={{ ...tdStyle, fontFamily: "var(--font-geist-mono), monospace", fontSize: 13 }}>
                         {s.maticni_broj ?? <span style={{ color: "var(--muted-2)" }}>—</span>}
                       </td>
                       <td style={{ ...tdStyle, color: "var(--muted)", maxWidth: 200 }}>

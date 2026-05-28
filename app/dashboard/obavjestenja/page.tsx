@@ -6,11 +6,18 @@ import PageShell from "@/components/layout/PageShell";
 import { useUser } from "@/lib/useUser";
 import { getRole } from "@/lib/auth";
 import api from "@/lib/axios";
-import type { AppNotification, RecipientType } from "@/types/notification";
+import type { AppNotification, RecipientType, PaginatedNotifications } from "@/types/notification";
 import SendNotificationModal from "@/components/notifications/SendNotificationModal";
+import CustomSelect from "@/components/ui/CustomSelect";
 import type { Sektor } from "@/types/notifications";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
+
+const PER_PAGE_OPTIONS = [
+  { label: "10", value: 10 },
+  { label: "25", value: 25 },
+  { label: "50", value: 50 },
+];
 
 // ── Konstante ─────────────────────────────────────────────────────────────
 
@@ -220,34 +227,54 @@ function NotificationCard({ notification: n, currentUserId, expanded, onToggle, 
 export default function ObavjestenjaPage() {
   const { user }   = useUser();
   const isVlasnik  = getRole() === "vlasnik";
-  const [sendOpen, setSendOpen]     = useState(false);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [sendOpen, setSendOpen]       = useState(false);
+  const [expandedId, setExpandedId]   = useState<number | null>(null);
   const [taskDoneIds, setTaskDoneIds] = useState<Set<number>>(new Set());
-  const queryClient                 = useQueryClient();
+  const queryClient                   = useQueryClient();
 
-  const { data: notifications = [], isLoading } = useQuery<AppNotification[]>({
-    queryKey: ["notifications", TENANT],
+  const [search, setSearch]               = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage]       = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
+  // Debounce search — also resets to page 1
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: paginated, isLoading } = useQuery<PaginatedNotifications>({
+    queryKey: ["notifications", TENANT, debouncedSearch, page, perPage],
     queryFn: ({ signal }) =>
-      api.get(`/api/${TENANT}/notifications`, { signal }).then((r) => r.data),
+      api.get(`/api/${TENANT}/notifications`, {
+        signal,
+        params: {
+          ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          page,
+          per_page: perPage,
+        },
+      }).then((r) => r.data),
     enabled: !!user,
     staleTime: 0,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
+    placeholderData: (prev) => prev,
   });
 
-  // Mark all as read as soon as the user opens this page.
-  // cancelQueries aborts any in-flight GET so it can't overwrite the
-  // optimistic setQueryData. If the GET already resolved, setQueryData
-  // still corrects the cache. invalidateQueries after PATCH ensures the
-  // DB truth is reflected once the write commits.
+  const notifications = paginated?.data ?? [];
+  const total    = paginated?.total ?? 0;
+  const lastPage = paginated?.last_page ?? 1;
+  const from     = paginated?.from ?? 0;
+  const to       = paginated?.to ?? 0;
+
+  // Mark all as read when the user opens this page
   const userId = user?.id;
   useEffect(() => {
     if (!userId) return;
     queryClient.cancelQueries({ queryKey: ["notifications", TENANT] });
-    queryClient.setQueryData<AppNotification[]>(
-      ["notifications", TENANT],
-      (old) => (old ?? []).map((n) => ({ ...n, is_read: true }))
-    );
     api.patch(`/api/${TENANT}/notifications/read-all`).then(() => {
       queryClient.invalidateQueries({ queryKey: ["notifications", TENANT] });
     });
@@ -270,10 +297,8 @@ export default function ObavjestenjaPage() {
   const handleTaskDone = async (n: AppNotification) => {
     if (n.task_done || taskDoneIds.has(n.id)) return;
     setTaskDoneIds((prev) => new Set([...prev, n.id]));
-    console.log("[task-done] PATCH firing for id:", n.id);
     try {
-      const res = await api.patch(`/api/${TENANT}/notifications/${n.id}/task-done`);
-      console.log("[task-done] PATCH success:", res.data);
+      await api.patch(`/api/${TENANT}/notifications/${n.id}/task-done`);
       queryClient.invalidateQueries({ queryKey: ["notifications", TENANT] });
     } catch (err) {
       console.error("[task-done] PATCH FAILED:", err);
@@ -294,6 +319,11 @@ export default function ObavjestenjaPage() {
   const unreadCount = notifications.filter(
     (n) => !n.is_read && n.sender_id !== user?.id
   ).length;
+
+  const handlePerPageChange = (v: string | number) => {
+    setPerPage(Number(v));
+    setPage(1);
+  };
 
   return (
     <PageShell navId="obv">
@@ -349,7 +379,7 @@ export default function ObavjestenjaPage() {
           onClick={() => setSendOpen(true)}
           style={{
             display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "10px 18px", background: "var(--brand)", color: "#fff",
+            padding: "10px 18px", background: "var(--amber)", color: "#fff",
             border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600,
             cursor: "pointer", fontFamily: "inherit", marginBottom: 6,
             whiteSpace: "nowrap" as React.CSSProperties["whiteSpace"],
@@ -362,9 +392,66 @@ export default function ObavjestenjaPage() {
         </button>
       </div>
 
+      {/* Toolbar */}
+      <div
+        style={{
+          padding: "14px 32px",
+          borderBottom: "1px solid var(--border-soft)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
+        {/* Search */}
+        <div style={{ position: "relative", flex: 1, maxWidth: 380 }}>
+          <svg
+            width="15" height="15"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              position: "absolute", left: 11, top: "50%",
+              transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none",
+            }}
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Pretraži po naslovu ili sadržaju..."
+            style={{
+              width: "100%",
+              padding: "8px 12px 8px 36px",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              fontSize: 14,
+              color: "#111418",
+              background: "#fff",
+              fontFamily: "inherit",
+              outline: "none",
+              boxSizing: "border-box",
+              transition: "border-color .15s",
+            }}
+            onFocus={(e) => (e.target.style.borderColor = "var(--brand)")}
+            onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+          />
+        </div>
+
+        {/* Per-page selector */}
+        <CustomSelect
+          value={perPage}
+          onChange={handlePerPageChange}
+          options={PER_PAGE_OPTIONS}
+          prefix="Prikaži:"
+        />
+      </div>
+
       {/* List */}
-      <div style={{ padding: "24px 32px 110px", display: "flex", flexDirection: "column", gap: 8 }}>
-        {isLoading ? (
+      <div style={{ padding: "20px 32px 0", display: "flex", flexDirection: "column", gap: 8 }}>
+        {isLoading && !paginated ? (
           Array.from({ length: 4 }).map((_, i) => (
             <div key={i} style={{ height: 72, borderRadius: 12, background: "#f1f2f5" }} />
           ))
@@ -384,9 +471,13 @@ export default function ObavjestenjaPage() {
               <path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4l2-2Z" />
               <path d="M10 20a2 2 0 0 0 4 0" />
             </svg>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>Nema obavještenja</p>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>
+              {debouncedSearch ? "Nema obavještenja za tu pretragu" : "Nema obavještenja"}
+            </p>
             <p style={{ margin: "6px 0 0", fontSize: 13.5 }}>
-              Ovdje će se prikazati poruke upućene vašem sektoru.
+              {debouncedSearch
+                ? `Nije pronađeno ništa za „${debouncedSearch}".`
+                : "Ovdje će se prikazati poruke upućene vašem sektoru."}
             </p>
           </div>
         ) : (
@@ -402,6 +493,85 @@ export default function ObavjestenjaPage() {
           ))
         )}
       </div>
+
+      {/* Pagination */}
+      {total > 0 && (
+        <div
+          style={{
+            padding: "16px 32px 110px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
+          <span style={{ fontSize: 13.5, color: "var(--muted)" }}>
+            Prikazano <strong style={{ color: "#374151" }}>{from}–{to}</strong> od ukupno{" "}
+            <strong style={{ color: "#374151" }}>{total}</strong> obavještenja
+          </span>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              onClick={() => setPage((p) => p - 1)}
+              disabled={page === 1}
+              style={{
+                padding: "7px 14px",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                background: "#fff",
+                color: page === 1 ? "var(--muted-2)" : "#374151",
+                fontSize: 13.5,
+                fontWeight: 500,
+                cursor: page === 1 ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                transition: "all .12s",
+                opacity: page === 1 ? 0.5 : 1,
+              }}
+            >
+              ← Prethodna
+            </button>
+
+            <span
+              style={{
+                padding: "7px 14px",
+                fontSize: 13.5,
+                color: "#374151",
+                fontWeight: 500,
+                background: "var(--brand-soft)",
+                border: "1px solid rgba(37,99,235,.15)",
+                borderRadius: 8,
+                minWidth: 56,
+                textAlign: "center",
+              }}
+            >
+              {page} / {lastPage}
+            </span>
+
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page >= lastPage}
+              style={{
+                padding: "7px 14px",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                background: "#fff",
+                color: page >= lastPage ? "var(--muted-2)" : "#374151",
+                fontSize: 13.5,
+                fontWeight: 500,
+                cursor: page >= lastPage ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                transition: "all .12s",
+                opacity: page >= lastPage ? 0.5 : 1,
+              }}
+            >
+              Sledeća →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* If no pagination, keep bottom spacing for tab bar */}
+      {total === 0 && <div style={{ paddingBottom: 110 }} />}
 
       <SendNotificationModal
         open={sendOpen}

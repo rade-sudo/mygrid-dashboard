@@ -77,6 +77,15 @@ function getAllowedNavIds(roles: string[]): string[] {
   return ["dash", "obv"];
 }
 
+const NAV_COLORS: Record<string, { bg: string; text: string }> = {
+  dash: { bg: "var(--brand-soft)",  text: "var(--brand)"  },
+  fin:  { bg: "var(--green-soft)",  text: "var(--green)"  },
+  pro:  { bg: "var(--brand-soft)",  text: "var(--brand)"  },
+  grad: { bg: "var(--amber-soft)",  text: "var(--amber)"  },
+  adm:  { bg: "var(--violet-soft)", text: "var(--violet)" },
+  obv:  { bg: "var(--amber-soft)",  text: "var(--amber)"  },
+};
+
 const CONTACTS = [
   { role: "Menadžer pumpa",  name: "—" },
   { role: "Šef gradilišta",  name: "—" },
@@ -411,6 +420,7 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
           {filteredNav.map((item) => {
             const Ico = item.icon;
             const isActive = activeId === item.id;
+            const clr = NAV_COLORS[item.id] ?? NAV_COLORS.dash;
             return (
               <button
                 key={item.id}
@@ -418,9 +428,9 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
                 style={{
                   display: "flex", alignItems: "center", gap: 14,
                   padding: "11px 14px", borderRadius: 10,
-                  color: isActive ? "var(--brand)" : "#2a2f37",
+                  color: isActive ? clr.text : "#2a2f37",
                   fontSize: 15, fontWeight: 500, cursor: "pointer",
-                  background: isActive ? "var(--brand-soft)" : "transparent",
+                  background: isActive ? clr.bg : "transparent",
                   border: "none", width: "100%", textAlign: "left",
                   transition: "background .12s ease, color .12s ease",
                 }}
@@ -431,7 +441,7 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
                   if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
                 }}
               >
-                <span style={{ color: isActive ? "var(--brand)" : "#6b7280", flexShrink: 0 }}>
+                <span style={{ color: isActive ? clr.text : "#6b7280", flexShrink: 0 }}>
                   <Ico w={20} h={20} />
                 </span>
                 <span style={{ flex: 1 }}>{item.label}</span>
@@ -443,7 +453,7 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
                       lineHeight: 1,
                       padding: "2px 7px",
                       borderRadius: 999,
-                      background: isActive ? "#7c3aed" : "rgba(124,58,237,0.12)",
+                      background: isActive ? clr.text : "rgba(124,58,237,0.12)",
                       color: isActive ? "#fff" : "#7c3aed",
                       flexShrink: 0,
                     }}

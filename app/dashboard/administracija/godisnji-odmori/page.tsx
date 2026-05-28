@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type { Employee } from "@/types/employee";
 import type { Vacation, VacationFormData } from "@/types/vacation";
 import { VACATION_TYPES, EMPTY_VACATION_FORM } from "@/types/vacation";
+import FormDropdown from "@/components/ui/FormDropdown";
+import DatePicker from "@/components/ui/DatePicker";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const BASE = `/api/${TENANT}/vacations`;
@@ -187,7 +189,6 @@ interface SlideOverProps {
 }
 
 function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
-  const firstRef = useRef<HTMLSelectElement>(null);
   const qc = useQueryClient();
 
   const { data: employees = [] } = useQuery<Employee[]>({
@@ -204,13 +205,13 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
     handleSubmit,
     reset,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<VacationFormData>({ defaultValues: EMPTY_VACATION_FORM });
 
   useEffect(() => {
     if (open) {
       reset(editing ? vacationToForm(editing) : EMPTY_VACATION_FORM);
-      setTimeout(() => firstRef.current?.focus(), 80);
     }
   }, [open, editing, reset]);
 
@@ -296,39 +297,40 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
           {/* Zaposleni */}
           <div>
             <label style={labelStyle}>Zaposleni</label>
-            <select
-              {...register("employee_id", { required: "Odaberi zaposlenog" })}
-              ref={(e) => {
-                register("employee_id").ref(e);
-                (firstRef as React.MutableRefObject<HTMLSelectElement | null>).current = e;
-              }}
-              style={{ ...inputStyle, cursor: "pointer" }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-            >
-              <option value="">— Odaberi zaposlenog —</option>
-              {activeEmployees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.first_name} {emp.last_name} ({emp.position})
-                </option>
-              ))}
-            </select>
+            <Controller
+              name="employee_id"
+              control={control}
+              rules={{ required: "Odaberi zaposlenog" }}
+              render={({ field }) => (
+                <FormDropdown
+                  value={String(field.value)}
+                  onChange={field.onChange}
+                  options={activeEmployees.map((emp) => ({
+                    value: String(emp.id),
+                    label: `${emp.first_name} ${emp.last_name} (${emp.position})`,
+                  }))}
+                  placeholder="— Odaberi zaposlenog —"
+                />
+              )}
+            />
             {errors.employee_id && <p style={errStyle}>{errors.employee_id.message}</p>}
           </div>
 
           {/* Tip odsustva */}
           <div>
             <label style={labelStyle}>Tip odsustva</label>
-            <select
-              {...register("type", { required: "Tip odsustva je obavezan" })}
-              style={{ ...inputStyle, cursor: "pointer" }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-            >
-              {VACATION_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
+            <Controller
+              name="type"
+              control={control}
+              rules={{ required: "Tip odsustva je obavezan" }}
+              render={({ field }) => (
+                <FormDropdown
+                  value={field.value}
+                  onChange={field.onChange}
+                  options={VACATION_TYPES}
+                />
+              )}
+            />
             {errors.type && <p style={errStyle}>{errors.type.message}</p>}
           </div>
 
@@ -336,28 +338,29 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Početni datum</label>
-              <input
-                type="date"
-                {...register("start_date", { required: "Datum početka je obavezan" })}
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+              <Controller
+                name="start_date"
+                control={control}
+                rules={{ required: "Datum početka je obavezan" }}
+                render={({ field }) => (
+                  <DatePicker value={field.value} onChange={field.onChange} />
+                )}
               />
               {errors.start_date && <p style={errStyle}>{errors.start_date.message}</p>}
             </div>
             <div>
               <label style={labelStyle}>Krajnji datum</label>
-              <input
-                type="date"
-                {...register("end_date", {
+              <Controller
+                name="end_date"
+                control={control}
+                rules={{
                   required: "Datum kraja je obavezan",
                   validate: (v) =>
                     !startDate || !v || v >= startDate || "Mora biti nakon početnog datuma",
-                })}
-                min={startDate || undefined}
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+                }}
+                render={({ field }) => (
+                  <DatePicker value={field.value} onChange={field.onChange} />
+                )}
               />
               {errors.end_date && <p style={errStyle}>{errors.end_date.message}</p>}
             </div>

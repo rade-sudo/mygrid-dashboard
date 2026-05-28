@@ -1,13 +1,8 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { Providers } from "./providers";
-
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-inter",
-});
 
 export const metadata: Metadata = {
   title: "mygrid · Dashboard",
@@ -20,8 +15,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="sr" className={`${inter.variable} h-full`}>
-      <body className="min-h-full" style={{ fontFamily: "var(--font-inter), Inter, -apple-system, sans-serif" }}>
+    <html lang="sr" className={`${GeistSans.variable} ${GeistMono.variable} h-full`}>
+      <body className="min-h-full" style={{ fontFamily: "var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif" }}>
         <Providers>{children}</Providers>
       </body>
     </html>

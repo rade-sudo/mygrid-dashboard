@@ -2,7 +2,9 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, Controller } from "react-hook-form";
+import DatePicker from "@/components/ui/DatePicker";
+import FilterDropdown from "@/components/ui/FilterDropdown";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type {
@@ -16,6 +18,23 @@ import {
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const INVOICES_BASE = `/api/${TENANT}/finansije/incoming-invoices`;
 const SUPPLIERS_BASE = `/api/${TENANT}/finansije/suppliers`;
+
+interface PaginatedInvoices {
+  data: IncomingInvoice[];
+  current_page: number;
+  last_page: number;
+  total: number;
+  per_page: number;
+  from: number | null;
+  to: number | null;
+}
+
+const STATUS_OPTIONS = [
+  { value: "",          label: "Sve fakture" },
+  { value: "placeno",   label: "Plaćeno"     },
+  { value: "neplaceno", label: "Neplaćeno"   },
+  { value: "delimicno", label: "Delimično"   },
+];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -158,7 +177,7 @@ function QuickAddSupplierModal({ initialName, onClose, onSuccess }: QuickAddProp
           </div>
           <div>
             <label style={labelStyle}>PIB <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opciono)</span></label>
-            <input type="text" placeholder="123456789" {...register("pib")} style={{ ...inputStyle, fontFamily: "'Courier New', monospace" }} onFocus={(e) => (e.target.style.borderColor = "var(--green)")} onBlur={(e) => (e.target.style.borderColor = "var(--border)")} />
+            <input type="text" placeholder="123456789" {...register("pib")} style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }} onFocus={(e) => (e.target.style.borderColor = "var(--green)")} onBlur={(e) => (e.target.style.borderColor = "var(--border)")} />
           </div>
 
           {saveMut.isError && (
@@ -300,7 +319,7 @@ function SupplierCombobox({ value, onChange, onRequestQuickAdd, hasError }: Comb
               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
             >
               <div style={{ fontSize: 14, fontWeight: 600, color: "#111418" }}>{s.name}</div>
-              {s.pib && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1, fontFamily: "'Courier New', monospace" }}>PIB: {s.pib}</div>}
+              {s.pib && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1, fontFamily: "var(--font-geist-mono), monospace" }}>PIB: {s.pib}</div>}
             </button>
           ))}
 
@@ -507,7 +526,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
               type="text" placeholder="npr. 2024/001 ili F-0042"
               {...register("invoice_number", { required: "Broj fakture je obavezan" })}
               ref={(e) => { register("invoice_number").ref(e); (firstRef as React.MutableRefObject<HTMLInputElement | null>).current = e; }}
-              style={{ ...inputStyle, fontFamily: "'Courier New', monospace" }}
+              style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }}
               onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
               onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
             />
@@ -518,19 +537,24 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Datum izdavanja</label>
-              <input type="date" {...register("issue_date", { required: "Datum je obavezan" })}
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+              <Controller
+                name="issue_date"
+                control={control}
+                rules={{ required: "Datum je obavezan" }}
+                render={({ field }) => (
+                  <DatePicker value={field.value} onChange={field.onChange} />
+                )}
               />
               {errors.issue_date && <p style={errStyle}>{errors.issue_date.message}</p>}
             </div>
             <div>
               <label style={labelStyle}>Rok plaćanja <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opciono)</span></label>
-              <input type="date" {...register("due_date")}
-                style={inputStyle}
-                onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+              <Controller
+                name="due_date"
+                control={control}
+                render={({ field }) => (
+                  <DatePicker value={field.value} onChange={field.onChange} />
+                )}
               />
             </div>
           </div>
@@ -542,7 +566,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
               <input
                 type="number" step="0.01" min="0" placeholder="0.00"
                 {...register("amount_without_vat", { required: "Osnovica je obavezna", min: { value: 0, message: "Mora biti ≥ 0" } })}
-                style={{ ...inputStyle, fontFamily: "'Courier New', monospace" }}
+                style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }}
                 onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
                 onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
               />
@@ -561,7 +585,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
               <input
                 type="number" step="0.01" min="0" placeholder="0.00"
                 {...register("vat_amount", { required: "PDV je obavezan", min: { value: 0, message: "Mora biti ≥ 0" } })}
-                style={{ ...inputStyle, fontFamily: "'Courier New', monospace" }}
+                style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }}
                 onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
                 onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
               />
@@ -572,7 +596,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
           {/* Total (computed display) */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--green-soft)", borderRadius: 11, border: "1px solid rgba(22,163,74,.2)" }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--green)", opacity: 0.85 }}>Ukupno sa PDV</span>
-            <span style={{ fontFamily: "'Courier New', monospace", fontSize: 19, fontWeight: 700, color: "var(--green)", letterSpacing: "-0.01em" }}>
+            <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 19, fontWeight: 700, color: "var(--green)", letterSpacing: "-0.01em" }}>
               {totalDisplay} RSD
             </span>
           </div>
@@ -626,7 +650,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
                       <input
                         type="number" step="0.01" min="0.01" placeholder="0.00"
                         {...register(`payments.${index}.amount`, { required: true })}
-                        style={{ ...inputStyle, fontFamily: "'Courier New', monospace" }}
+                        style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }}
                         onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
                         onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
                       />
@@ -800,6 +824,107 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
   );
 }
 
+// ─── Supplier slide-over ─────────────────────────────────────────────────────
+
+interface SupplierSlideOverProps {
+  supplierName: string | null;
+  invoices: IncomingInvoice[];
+  onClose: () => void;
+}
+
+function SupplierSlideOver({ supplierName, invoices, onClose }: SupplierSlideOverProps) {
+  if (!supplierName) return null;
+
+  const supplierInvoices = invoices.filter((inv) => inv.supplier?.name === supplierName);
+
+  const totalAmount = supplierInvoices.reduce((acc, inv) => acc + parseFloat(inv.total_amount), 0);
+
+  const unpaidAmount = supplierInvoices.reduce((acc, inv) => {
+    if (inv.status === "placeno") return acc;
+    const paid = (inv.payments ?? []).reduce((s, p) => s + parseFloat(p.amount), 0);
+    return acc + Math.max(0, parseFloat(inv.total_amount) - paid);
+  }, 0);
+
+  const invoiceCount = supplierInvoices.length;
+  const unpaidCount = supplierInvoices.filter((inv) => inv.status !== "placeno").length;
+
+  return (
+    <>
+      <style>{`@keyframes supplierSlideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
+      <div
+        style={{
+          position: "fixed", top: 0, right: 0, bottom: 0, width: 460,
+          background: "#fff", zIndex: 91, display: "flex", flexDirection: "column",
+          boxShadow: "-12px 0 48px rgba(16,24,40,.16)",
+          animation: "supplierSlideIn .25s cubic-bezier(.32,.72,.27,1)",
+        }}
+      >
+        <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--green)", marginBottom: 4 }}>Dobavljač</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "#111418", letterSpacing: "-0.01em", lineHeight: 1.25 }}>{supplierName}</div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 20, flexShrink: 0, marginTop: 2 }}
+          >×</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ padding: "16px", borderRadius: 14, border: "1px solid rgba(22,163,74,.18)", background: "var(--green-soft)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--green)", opacity: 0.8, marginBottom: 6 }}>Ukupan iznos</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--green)", fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                {totalAmount.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RSD
+              </div>
+              <div style={{ fontSize: 12, color: "var(--green)", opacity: 0.7, marginTop: 4 }}>
+                {invoiceCount} {invoiceCount === 1 ? "faktura" : invoiceCount < 5 ? "fakture" : "faktura"}
+              </div>
+            </div>
+
+            <div style={{ padding: "16px", borderRadius: 14, border: `1px solid ${unpaidAmount > 0 ? "#fecaca" : "rgba(22,163,74,.18)"}`, background: unpaidAmount > 0 ? "#fef2f2" : "var(--green-soft)" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: unpaidAmount > 0 ? "var(--red)" : "var(--green)", opacity: 0.8, marginBottom: 6 }}>Za plaćanje</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: unpaidAmount > 0 ? "var(--red)" : "var(--green)", fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                {unpaidAmount.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RSD
+              </div>
+              <div style={{ fontSize: 12, color: unpaidAmount > 0 ? "var(--red)" : "var(--green)", opacity: 0.7, marginTop: 4 }}>
+                {unpaidCount === 0 ? "Sve izmireno" : `${unpaidCount} neplaćenih`}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#374151", letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 10 }}>Istorija faktura</div>
+            {supplierInvoices.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "32px 0", color: "var(--muted)", fontSize: 13 }}>Nema faktura za ovog dobavljača</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {supplierInvoices.map((inv) => (
+                  <div
+                    key={inv.id}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 11, border: "1px solid var(--border-soft)", background: "#fafafa", transition: "background .1s" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#f1f5f9"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#fafafa"; }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#111418", fontFamily: "var(--font-geist-mono), monospace" }}>{inv.invoice_number}</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{formatDate(inv.issue_date)}</div>
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "#111418", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", marginRight: 8 }}>
+                      {formatCurrency(inv.total_amount)}
+                    </div>
+                    <StatusBadge status={inv.status} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function UlazneFakturePage() {
@@ -809,12 +934,38 @@ export default function UlazneFakturePage() {
   const [deleteTarget, setDeleteTarget] = useState<IncomingInvoice | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [openingDocId, setOpeningDocId] = useState<number | null>(null);
+  const [supplierPanelName, setSupplierPanelName] = useState<string | null>(null);
 
-  const { data: invoices = [], isLoading } = useQuery<IncomingInvoice[]>({
-    queryKey: ["incoming-invoices", TENANT],
-    queryFn: ({ signal }) => api.get(INVOICES_BASE, { signal }).then((r) => r.data),
+  const [search, setSearch]                   = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage]                       = useState(1);
+  const [statusFilter, setStatusFilter]       = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: paginatedData, isLoading } = useQuery<PaginatedInvoices>({
+    queryKey: ["incoming-invoices", TENANT, debouncedSearch, page, statusFilter],
+    queryFn: ({ signal }) =>
+      api.get(INVOICES_BASE, {
+        signal,
+        params: {
+          ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          ...(statusFilter !== "" ? { status: statusFilter } : {}),
+          page,
+          per_page: 15,
+        },
+      }).then((r) => r.data),
+    placeholderData: (prev) => prev,
     staleTime: 30_000,
   });
+  const invoices = paginatedData?.data ?? [];
+  const total    = paginatedData?.total ?? 0;
+  const lastPage = paginatedData?.last_page ?? 1;
+  const from     = paginatedData?.from ?? 0;
+  const to       = paginatedData?.to ?? 0;
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => api.delete(`${INVOICES_BASE}/${id}`),
@@ -871,6 +1022,37 @@ export default function UlazneFakturePage() {
 
       {/* Table */}
       <div style={{ padding: "24px 32px 110px" }}>
+
+        {/* Toolbar: search + status filter */}
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ position: "relative", flex: 1, maxWidth: 380 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none" }}>
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Pretraga po broju fakture ili dobavljaču..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: "100%", padding: "9px 12px 9px 38px", border: "1.5px solid var(--border)", borderRadius: 10, fontSize: 13.5, color: "#111418", background: "#fff", fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color .15s" }}
+              onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+            />
+          </div>
+          <FilterDropdown
+            value={statusFilter}
+            onChange={(v) => { setStatusFilter(v); setPage(1); }}
+            placeholder="Sve fakture"
+            color="green"
+            options={STATUS_OPTIONS}
+            icon={
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            }
+          />
+        </div>
+
         <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
           {isLoading ? (
             <div style={{ padding: "56px 0", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>Učitavanje faktura...</div>
@@ -879,8 +1061,8 @@ export default function UlazneFakturePage() {
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 16px", display: "block", opacity: 0.3 }}>
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" />
               </svg>
-              <p style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>Nema ulaznih faktura</p>
-              <p style={{ margin: "6px 0 0", fontSize: 13.5 }}>Dodajte prvu fakturu klikom na dugme iznad.</p>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>{debouncedSearch ? `Nema rezultata za "${debouncedSearch}"` : "Nema ulaznih faktura"}</p>
+              <p style={{ margin: "6px 0 0", fontSize: 13.5 }}>{debouncedSearch ? "Promijenite ili obrišite pretragu." : "Dodajte prvu fakturu klikom na dugme iznad."}</p>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -904,7 +1086,7 @@ export default function UlazneFakturePage() {
                     >
                       <td style={tdStyle}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontFamily: "'Courier New', monospace", fontSize: 13, fontWeight: 600, color: "#374151" }}>{inv.invoice_number}</span>
+                          <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 13, fontWeight: 600, color: "#374151" }}>{inv.invoice_number}</span>
                           {inv.document_path && (
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -912,7 +1094,18 @@ export default function UlazneFakturePage() {
                           )}
                         </div>
                       </td>
-                      <td style={{ ...tdStyle, fontWeight: 500 }}>{inv.supplier?.name ?? <span style={{ color: "var(--muted-2)" }}>—</span>}</td>
+                      <td style={tdStyle}>
+                        {inv.supplier ? (
+                          <button
+                            onClick={() => setSupplierPanelName(inv.supplier.name)}
+                            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--green)", textDecoration: "none", transition: "color .12s" }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "underline"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "none"; }}
+                          >
+                            {inv.supplier.name}
+                          </button>
+                        ) : <span style={{ color: "var(--muted-2)" }}>—</span>}
+                      </td>
                       <td style={{ ...tdStyle, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatDate(inv.issue_date)}</td>
                       <td style={{ ...tdStyle, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                         {inv.due_date ? (
@@ -974,12 +1167,37 @@ export default function UlazneFakturePage() {
           )}
         </div>
 
-        {invoices.length > 0 && (
-          <div style={{ marginTop: 12, fontSize: 13, color: "var(--muted)", paddingLeft: 4 }}>
-            {invoices.length} {invoices.length === 1 ? "faktura" : invoices.length < 5 ? "fakture" : "faktura"}
+        {total > 0 && (
+          <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 13, color: "var(--muted)", paddingLeft: 4 }}>
+              {debouncedSearch
+                ? `${total} ${total === 1 ? "rezultat" : "rezultata"} za "${debouncedSearch}"`
+                : `${total} ${total === 1 ? "faktura" : total < 5 ? "fakture" : "faktura"}`}
+            </span>
+            {lastPage > 1 && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button
+                  onClick={() => setPage((p) => p - 1)}
+                  disabled={page === 1}
+                  style={{ padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "#fff", color: page === 1 ? "var(--muted-2)" : "#374151", fontSize: 13, fontWeight: 500, cursor: page === 1 ? "default" : "pointer", fontFamily: "inherit" }}
+                >← Prethodna</button>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#374151", padding: "0 8px" }}>{page} / {lastPage}</span>
+                <button
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page >= lastPage}
+                  style={{ padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "#fff", color: page >= lastPage ? "var(--muted-2)" : "#374151", fontSize: 13, fontWeight: 500, cursor: page >= lastPage ? "default" : "pointer", fontFamily: "inherit" }}
+                >Sledeća →</button>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      <SupplierSlideOver
+        supplierName={supplierPanelName}
+        invoices={invoices}
+        onClose={() => setSupplierPanelName(null)}
+      />
 
       <InvoiceSlideOver
         open={invoiceSlide}

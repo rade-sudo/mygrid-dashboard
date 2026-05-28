@@ -21,6 +21,17 @@ interface ApiNotification {
   created_at: string;
 }
 
+interface ApiPaginatedResponse {
+  data: ApiNotification[];
+  current_page: number;
+  last_page: number;
+  total: number;
+  per_page: number;
+  from: number | null;
+  to: number | null;
+  unread_count: number;
+}
+
 function toLocal(n: ApiNotification): Notification {
   return {
     id: String(n.id),
@@ -38,7 +49,7 @@ function toLocal(n: ApiNotification): Notification {
 export function useNotifications() {
   const qc = useQueryClient();
 
-  const { data: apiData = [] } = useQuery<ApiNotification[]>({
+  const { data: apiData } = useQuery<ApiPaginatedResponse>({
     queryKey: NOTIFICATIONS_QK,
     queryFn: ({ signal }) =>
       api.get(`/api/${TENANT}/notifications`, { signal }).then((r) => r.data),
@@ -47,17 +58,24 @@ export function useNotifications() {
     refetchOnWindowFocus: false,
   });
 
-  const notifications = apiData.map(toLocal);
-  const readIds = apiData.filter((n) => n.is_read).map((n) => String(n.id));
-  const unreadCount = apiData.filter((n) => !n.is_read).length;
+  const rawData      = apiData?.data ?? [];
+  const notifications = rawData.map(toLocal);
+  const readIds      = rawData.filter((n) => n.is_read).map((n) => String(n.id));
+  // unread_count from backend is computed before any search filter — always reflects true total
+  const unreadCount  = apiData?.unread_count ?? 0;
 
   const markAllReadMut = useMutation({
     mutationFn: () =>
       api.patch(`/api/${TENANT}/notifications/read-all`).then((r) => r.data),
     onMutate: () => {
-      qc.setQueryData<ApiNotification[]>(NOTIFICATIONS_QK, (old) =>
-        (old ?? []).map((n) => ({ ...n, is_read: true }))
-      );
+      qc.setQueryData<ApiPaginatedResponse>(NOTIFICATIONS_QK, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map((n) => ({ ...n, is_read: true })),
+          unread_count: 0,
+        };
+      });
     },
   });
 

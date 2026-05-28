@@ -1,3 +1,14 @@
+export interface PaginatedNotifications {
+  data: AppNotification[];
+  current_page: number;
+  last_page: number;
+  total: number;
+  per_page: number;
+  from: number | null;
+  to: number | null;
+  unread_count: number;
+}
+
 export type RecipientType =
   | "vlasnik"
   | "administracija"

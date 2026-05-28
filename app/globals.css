@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@theme {
+  --font-family-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+
 :root {
   --bg: #ffffff;
   --sidebar-bg: #fafafa;
@@ -140,7 +145,7 @@ html, body {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -156,6 +161,11 @@ button {
 
 @keyframes mg-spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes grid-move {
+  from { background-position: 50% 0; }
+  to   { background-position: 50% 50px; }
 }
 
 /* scrollbar */
