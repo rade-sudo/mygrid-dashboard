@@ -48,9 +48,9 @@ export default function PageShell({ navId, children }: PageShellProps) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "var(--layout-cols, 260px 1fr)",
+        gridTemplateColumns: "var(--layout-cols, 288px 1fr)",
         minHeight: "100vh",
-        background: "#ffffff",
+        background: "#f5f6f8",
       }}
     >
       {menuOpen && (

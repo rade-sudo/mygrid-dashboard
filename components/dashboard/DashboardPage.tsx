@@ -136,11 +136,13 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "var(--layout-cols, 260px 1fr)",
+        gridTemplateColumns: "var(--layout-cols, 288px 1fr)",
         minHeight: "100vh",
-        background: "#ffffff",
+        background: "#f5f6f8",
+        position: "relative",
       }}
     >
+      <PerspectiveGrid />
       {menuOpen && (
         <div
           onClick={() => setMenuOpen(false)}
@@ -168,12 +170,10 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
           display: "flex",
           flexDirection: "column",
           minWidth: 0,
-          background: "#ffffff",
+          background: "transparent",
           position: "relative",
-          isolation: "isolate",
         }}
       >
-        <PerspectiveGrid />
         <TopBar onMenu={() => setMenuOpen(true)} />
 
         {/* Hero wrapper: no overflow so the dropdown isn't clipped */}
@@ -216,7 +216,7 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
               top: "50%",
               right: 32,
               transform: "translateY(-50%)",
-              zIndex: 50,
+              zIndex: 10,
             }}
           >
             <button
@@ -282,7 +282,7 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
                   borderRadius: 16,
                   boxShadow:
                     "0 8px 32px rgba(16,24,40,.1), 0 2px 8px rgba(16,24,40,.06)",
-                  zIndex: 60,
+                  zIndex: 20,
                 }}
               >
                 <div

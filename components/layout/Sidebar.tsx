@@ -385,171 +385,219 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
 
   return (
     <>
+      {/* SVG filter — liquid glass refraction (Chrome/Edge) */}
+      <svg aria-hidden="true" style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}>
+        <defs>
+          <filter id="mg-lg-sidebar" x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" seed="2" result="noise" />
+            <feGaussianBlur in="noise" stdDeviation="1.5" result="smoothNoise" />
+            <feDisplacementMap in="SourceGraphic" in2="smoothNoise" scale="7" xChannelSelector="R" yChannelSelector="G" result="displaced" />
+          </filter>
+        </defs>
+      </svg>
+
       <aside
         style={{
-          background: "var(--sidebar-bg)",
-          borderRight: "1px solid var(--border)",
+          position: "var(--sidebar-pos, sticky)" as React.CSSProperties["position"],
+          top: "var(--sidebar-top-offset, 14px)" as unknown as number,
+          margin: "var(--sidebar-margin, 14px 0 14px 14px)",
           width: "var(--sidebar-w, 260px)",
           flexShrink: 0,
-          display: "flex",
-          flexDirection: "column",
-          padding: "18px 14px 14px",
-          gap: 6,
-          minHeight: "100vh",
-          maxHeight: "100vh",
-          overflowY: "auto",
-          position: "var(--sidebar-pos, sticky)" as React.CSSProperties["position"],
-          top: 0,
+          height: "var(--sidebar-height, calc(100vh - 28px))",
+          maxHeight: "var(--sidebar-height, calc(100vh - 28px))",
+          borderRadius: "var(--sidebar-radius, 18px)",
           transform: isOpen ? "translateX(0)" : "var(--sidebar-transform, none)",
           transition: "transform .25s cubic-bezier(.32,.72,.27,1)",
           zIndex: "var(--sidebar-z, auto)" as unknown as number,
-          boxShadow: "var(--sidebar-shadow, none)",
           alignSelf: "flex-start",
+          overflow: "hidden",
+          isolation: "isolate",
+          boxShadow: "0 16px 48px rgba(37,99,235,.13), 0 4px 12px rgba(16,24,40,.08)",
         }}
       >
-        {/* Logo */}
-        <div style={{ height: 56, display: "flex", alignItems: "center", paddingLeft: 8 }}>
-          <div style={{ fontWeight: 800, fontSize: 32, letterSpacing: "-0.04em", lineHeight: 1, userSelect: "none" }}>
-            <span style={{ color: "var(--brand-ink)" }}>my</span>
-            <span style={{ color: "var(--brand)" }}>grid</span>
-          </div>
-        </div>
+        {/* Layer 1 — backdrop blur + SVG distortion */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 0,
+            backdropFilter: "url(#mg-lg-sidebar) blur(36px) saturate(190%)",
+            WebkitBackdropFilter: "blur(36px) saturate(190%)",
+            background: "rgba(255, 255, 255, 0.16)",
+          }}
+        />
 
-        {/* Main navigation — filtrirano po ulozi */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 0" }}>
-          {filteredNav.map((item) => {
-            const Ico = item.icon;
-            const isActive = activeId === item.id;
-            const clr = NAV_COLORS[item.id] ?? NAV_COLORS.dash;
-            return (
-              <button
-                key={item.id}
-                onClick={() => { onNav(item.id); onClose?.(); }}
+        {/* Layer 2 — gradient tint (brighter top-left → dimmer bottom-right) */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 1,
+            background: "linear-gradient(155deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.10) 55%, rgba(37,99,235,0.05) 100%)",
+            pointerEvents: "none",
+          }}
+        />
+
+        {/* Layer 3 — scrollable content */}
+        <div
+          style={{
+            position: "relative",
+            zIndex: 2,
+            height: "100%",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            padding: "18px 14px 14px",
+            gap: 6,
+          }}
+        >
+          {/* Logo */}
+          <div style={{ height: 56, display: "flex", alignItems: "center", paddingLeft: 8 }}>
+            <div style={{ fontWeight: 800, fontSize: 32, letterSpacing: "-0.04em", lineHeight: 1, userSelect: "none" }}>
+              <span style={{ color: "var(--brand-ink)" }}>my</span>
+              <span style={{ color: "var(--brand)" }}>grid</span>
+            </div>
+          </div>
+
+          {/* Main navigation — filtrirano po ulozi */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 0" }}>
+            {filteredNav.map((item) => {
+              const Ico = item.icon;
+              const isActive = activeId === item.id;
+              const clr = NAV_COLORS[item.id] ?? NAV_COLORS.dash;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => { onNav(item.id); onClose?.(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 14,
+                    padding: "11px 14px", borderRadius: 10,
+                    color: isActive ? clr.text : "#1a1f2e",
+                    fontSize: 15, fontWeight: 500, cursor: "pointer",
+                    background: isActive ? clr.bg : "transparent",
+                    border: "none", width: "100%", textAlign: "left",
+                    transition: "background .12s ease, color .12s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.42)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                  }}
+                >
+                  <span style={{ color: isActive ? clr.text : "#4b5563", flexShrink: 0 }}>
+                    <Ico w={20} h={20} />
+                  </span>
+                  <span style={{ flex: 1 }}>{item.label}</span>
+                  {item.id === "obv" && unreadCount > 0 && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        background: isActive ? clr.text : "rgba(124,58,237,0.12)",
+                        color: isActive ? "#fff" : "#7c3aed",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Brzi kontakti */}
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", color: "var(--muted)", padding: "14px 12px 6px", textTransform: "uppercase" }}>
+            Brzi kontakti
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {CONTACTS.map((c, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px", borderRadius: 10, color: "#1a1f2e", fontSize: 14.5 }}>
+                <span style={{ color: "var(--muted-2)", flexShrink: 0 }}>
+                  <IconPhone w={18} h={18} />
+                </span>
+                <div>
+                  <div>{c.role}</div>
+                  <div style={{ fontSize: 13, color: "var(--muted-2)", marginTop: 2 }}>{c.name}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* User card */}
+          <div ref={userCardRef} style={{ marginTop: "auto", position: "relative" }}>
+            {userMenuOpen && (
+              <div
                 style={{
-                  display: "flex", alignItems: "center", gap: 14,
-                  padding: "11px 14px", borderRadius: 10,
-                  color: isActive ? clr.text : "#2a2f37",
-                  fontSize: 15, fontWeight: 500, cursor: "pointer",
-                  background: isActive ? clr.bg : "transparent",
-                  border: "none", width: "100%", textAlign: "left",
-                  transition: "background .12s ease, color .12s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "#f1f2f5";
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                  position: "absolute",
+                  bottom: "calc(100% + 8px)",
+                  left: 0, right: 0,
+                  background: "rgba(255, 255, 255, 0.82)",
+                  backdropFilter: "blur(24px) saturate(180%)",
+                  WebkitBackdropFilter: "blur(24px) saturate(180%)",
+                  border: "1px solid rgba(255, 255, 255, 0.70)",
+                  borderRadius: 14,
+                  boxShadow: "0 12px 40px rgba(37,99,235,.12), 0 2px 8px rgba(16,24,40,.08), inset 0 1px 0 rgba(255,255,255,.95)",
+                  overflow: "hidden",
                 }}
               >
-                <span style={{ color: isActive ? clr.text : "#6b7280", flexShrink: 0 }}>
-                  <Ico w={20} h={20} />
-                </span>
-                <span style={{ flex: 1 }}>{item.label}</span>
-                {item.id === "obv" && unreadCount > 0 && (
-                  <span
+                {isVlasnik && (
+                  <button
+                    onClick={() => { setUserMenuOpen(false); setAddUserOpen(true); }}
                     style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      lineHeight: 1,
-                      padding: "2px 7px",
-                      borderRadius: 999,
-                      background: isActive ? clr.text : "rgba(124,58,237,0.12)",
-                      color: isActive ? "#fff" : "#7c3aed",
-                      flexShrink: 0,
+                      display: "flex", alignItems: "center", gap: 10,
+                      width: "100%", padding: "11px 14px",
+                      background: "none", border: "none", cursor: "pointer",
+                      fontSize: 14, color: "var(--brand)",
+                      fontFamily: "inherit", fontWeight: 500, textAlign: "left",
+                      borderBottom: "1px solid rgba(255,255,255,0.5)",
                     }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(239,246,255,0.6)"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
                   >
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
+                    <IconUserPlus w={16} h={16} />
+                    Dodaj korisnika
+                  </button>
                 )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Brzi kontakti */}
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".12em", color: "var(--muted)", padding: "14px 12px 6px", textTransform: "uppercase" }}>
-          Brzi kontakti
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {CONTACTS.map((c, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px", borderRadius: 10, color: "#2a2f37", fontSize: 14.5 }}>
-              <span style={{ color: "var(--muted-2)", flexShrink: 0 }}>
-                <IconPhone w={18} h={18} />
-              </span>
-              <div>
-                <div>{c.role}</div>
-                <div style={{ fontSize: 13, color: "var(--muted-2)", marginTop: 2 }}>{c.name}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* User card */}
-        <div ref={userCardRef} style={{ marginTop: "auto", position: "relative" }}>
-          {userMenuOpen && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: "calc(100% + 8px)",
-                left: 0, right: 0,
-                background: "#fff",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                boxShadow: "0 8px 24px rgba(16,24,40,.10), 0 2px 6px rgba(16,24,40,.06)",
-                overflow: "hidden",
-              }}
-            >
-              {isVlasnik && (
                 <button
-                  onClick={() => { setUserMenuOpen(false); setAddUserOpen(true); }}
+                  onClick={() => { setUserMenuOpen(false); onLogout?.(); }}
                   style={{
                     display: "flex", alignItems: "center", gap: 10,
                     width: "100%", padding: "11px 14px",
                     background: "none", border: "none", cursor: "pointer",
-                    fontSize: 14, color: "var(--brand)",
+                    fontSize: 14, color: "#dc2626",
                     fontFamily: "inherit", fontWeight: 500, textAlign: "left",
-                    borderBottom: "1px solid var(--border-soft)",
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#f5f8ff"; }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(254,242,242,0.65)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
                 >
-                  <IconUserPlus w={16} h={16} />
-                  Dodaj korisnika
+                  <IconLogout w={16} h={16} />
+                  Odjavi se
                 </button>
-              )}
-              <button
-                onClick={() => { setUserMenuOpen(false); onLogout?.(); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", padding: "11px 14px",
-                  background: "none", border: "none", cursor: "pointer",
-                  fontSize: 14, color: "#dc2626",
-                  fontFamily: "inherit", fontWeight: 500, textAlign: "left",
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fef2f2"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
-              >
-                <IconLogout w={16} h={16} />
-                Odjavi se
-              </button>
-            </div>
-          )}
+              </div>
+            )}
 
-          <button
-            onClick={() => setUserMenuOpen((v) => !v)}
-            style={{
-              display: "flex", alignItems: "center", gap: 12,
-              padding: 10,
-              border: `1px solid ${userMenuOpen ? "var(--brand)" : "var(--border)"}`,
-              background: userMenuOpen ? "#f5f8ff" : "#fff",
-              borderRadius: 12,
-              boxShadow: "var(--shadow-card)",
-              width: "100%",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              transition: "border-color .15s, background .15s",
-            }}
-          >
+            <button
+              onClick={() => setUserMenuOpen((v) => !v)}
+              style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: 10,
+                border: `1px solid ${userMenuOpen ? "rgba(37,99,235,0.5)" : "rgba(255,255,255,0.50)"}`,
+                background: userMenuOpen ? "rgba(239,246,255,0.50)" : "rgba(255,255,255,0.38)",
+                backdropFilter: "blur(12px) saturate(160%)",
+                WebkitBackdropFilter: "blur(12px) saturate(160%)",
+                borderRadius: 12,
+                boxShadow: "0 2px 8px rgba(16,24,40,.06), inset 0 1px 0 rgba(255,255,255,.90)",
+                width: "100%",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "border-color .15s, background .15s",
+              }}
+            >
             <div
               style={{
                 width: 38, height: 38, borderRadius: 10,
@@ -580,7 +628,26 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
               <IconCaretSm />
             </span>
           </button>
-        </div>
+          </div>{/* /user card */}
+        </div>{/* /Layer 3 content */}
+
+        {/* Layer 4 — specular rimlight (above content, pointer-events off) */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 3,
+            borderRadius: "inherit",
+            boxShadow: [
+              "inset 0 1.5px 0 rgba(255,255,255,0.96)",
+              "inset 1px 0 0 rgba(255,255,255,0.58)",
+              "inset -1px 0 0 rgba(255,255,255,0.28)",
+              "inset 0 -1px 0 rgba(255,255,255,0.16)",
+            ].join(", "),
+            border: "1px solid rgba(255,255,255,0.52)",
+            pointerEvents: "none",
+          }}
+        />
       </aside>
 
       {/* AddUser slide-over */}

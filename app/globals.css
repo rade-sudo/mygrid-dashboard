@@ -27,7 +27,7 @@
   --shadow-card: 0 1px 2px rgba(16,24,40,.04), 0 1px 1px rgba(16,24,40,.02);
 
   /* ===== Responsive layout variables ===== */
-  --layout-cols: 260px 1fr;
+  --layout-cols: 288px 1fr;
   --hero-padding: 8px 32px 6px;
   --hero-h1: 32px;
   --hero-p: 15.5px;
@@ -36,7 +36,7 @@
   --row2-cols: 1fr 1fr;
   --row3-cols: repeat(3, 1fr);
   --row4-cols: repeat(4, 1fr);
-  --tabbar-left: 260px;
+  --tabbar-left: 288px;
   --tabbar-bottom: 18px;
   --login-grid: 480px 1fr;
   --login-aside-d: flex;
@@ -58,8 +58,12 @@
   --sidebar-pos: sticky;
   --sidebar-transform: none;
   --sidebar-z: auto;
-  --sidebar-shadow: none;
+  --sidebar-shadow: 0 8px 32px rgba(37,99,235,.10), 0 2px 8px rgba(16,24,40,.06), inset 0 1px 0 rgba(255,255,255,.90);
   --sidebar-w: 260px;
+  --sidebar-margin: 14px 0 14px 14px;
+  --sidebar-radius: 18px;
+  --sidebar-top-offset: 14px;
+  --sidebar-height: calc(100vh - 28px);
 }
 
 @supports (padding: env(safe-area-inset-bottom)) {
@@ -109,6 +113,10 @@
     --sidebar-z: 50;
     --sidebar-shadow: 0 20px 40px rgba(10,17,36,.18);
     --sidebar-w: 280px;
+    --sidebar-margin: 0;
+    --sidebar-radius: 0;
+    --sidebar-top-offset: 0;
+    --sidebar-height: 100vh;
   }
 }
 

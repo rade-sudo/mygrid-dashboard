@@ -17,11 +17,15 @@ Funkcionalnost referenca: `c:\Users\Korisnik\Desktop\test\koloseum_sistem__46_ (
 | Modul | Status |
 |---|---|
 | Dashboard (početna, kartice) | Implementiran |
-| Obaveštenja (slanje, istorija) | Implementiran |
-| Finansije | Nije implementirano |
+| Obaveštenja (slanje, istorija) | Implementiran (backend API + localStorage fallback) |
+| Finansije — Bankarski izvodi | Implementiran (CRUD + transakcije po banci) |
+| Finansije — Ulazne fakture | Implementiran (CRUD, dobavljač combobox, upload dokumenta, plaćanja) |
+| Finansije — Dobavljači | Implementiran (CRUD, slide-over forma) |
+| Administracija — Zaposleni | Implementiran (CRUD, sektori, tip zarade) |
+| Administracija — Ugovori | Implementiran (CRUD, tipovi, datumi isteka) |
+| Administracija — Godišnji odmori | Implementiran (CRUD, status, period) |
 | Prodaja | Nije implementirano |
 | Gradilište | Nije implementirano |
-| Administracija | Nije implementirano |
 | Pumpa | Preskočiti — ne implementirati |
 | Vozila | Preskočiti — ne implementirati |
 | Magacin | Preskočiti — ne implementirati |
@@ -31,10 +35,10 @@ Funkcionalnost referenca: `c:\Users\Korisnik\Desktop\test\koloseum_sistem__46_ (
 ## Dizajn sistem
 
 ### Pravila stila
-- Sve komponente koriste **React inline styles** — bez Tailwind klasa (Tailwind je instaliran ali se ne koristi u JSX-u).
-- Font: **Inter** (učitan preko `next/font/google`, weights 400–800).
+- Komponente mogu koristiti i **Tailwind utility klase u JSX-u** i **React inline styles** — oba pristupa su dozvoljena i mogu se kombinovati.
+- Font: **Geist Sans** + **Geist Mono** (paket `geist`, CSS vars `--font-geist-sans` / `--font-geist-mono`).
 - Locale: `sr-Latn` za datume i vremena.
-- Inline stil uvek koristi CSS custom properties gdje postoje (`var(--brand)`, `var(--border)`...).
+- CSS custom properties (`var(--brand)`, `var(--border)`...) dostupne su i iz inline stilova i iz Tailwind arbitrary values (`bg-[var(--brand)]`).
 
 ### CSS custom properties (`app/globals.css`)
 
@@ -77,15 +81,48 @@ Funkcionalnost referenca: `c:\Users\Korisnik\Desktop\test\koloseum_sistem__46_ (
 ```
 app/
   globals.css          — CSS custom properties, reset, scrollbar
-  layout.tsx           — Inter font, lang="sr", body font-family
-  page.tsx             — jedini route, renderuje <DashboardPage>
+  layout.tsx           — Geist font (GeistSans + GeistMono), lang="sr", body font-family, TanStackProvider
+  page.tsx             — root route → redirect na /dashboard
+
+  login/
+    page.tsx           — login forma (CSRF + POST, mg_token cookie)
+
+  dashboard/
+    page.tsx           — Dashboard kartice (mock podaci + API stats)
+
+    finansije/
+      page.tsx         — KPI kartice + ModuleCard navigacija
+      banke/
+        page.tsx       — lista bankovnih računa (CRUD)
+        [id]/page.tsx  — transakcije po banci (CRUD, paginacija)
+      dobavljaci/
+        page.tsx       — lista dobavljača (CRUD, slide-over forma)
+      ulazne-fakture/
+        page.tsx       — lista faktura (CRUD, filter, paginacija, plaćanja, dokument)
+
+    administracija/
+      page.tsx         — KPI kartice + ModuleCard navigacija
+      zaposleni/
+        page.tsx       — lista zaposlenih (CRUD, sektori, tip zarade, slide-over)
+      ugovori/
+        page.tsx       — lista ugovora (CRUD, tip, datumi, slide-over)
+      godisnji-odmori/
+        page.tsx       — lista odsustva (CRUD, status, period, slide-over)
+
+    obavjestenja/
+      page.tsx         — dedikirana stranica za obaveštenja
 
 components/
   ui/
     icons.tsx          — svi SVG ikoni (inline, stroke="currentColor", props: w, h)
+    FilterDropdown.tsx — filter dropdown sa bojom (violet/green/brand/amber), active state
+    DatePicker.tsx     — calendar picker, portaling, sr-Latn nazivi meseci
+    CustomSelect.tsx   — select sa optional prefix labelom (pagination rows-per-page)
+    FormDropdown.tsx   — jednostavan dropdown za forme
 
   layout/
-    Sidebar.tsx        — 260px fixed sidebar, nav stavke, brzi kontakti, user card
+    PageShell.tsx      — layout wrapper: Sidebar + TopBar + BottomTabBar + auth guard
+    Sidebar.tsx        — 260px fixed sidebar, nav stavke, brzi kontakti, user card, AddUserPanel
     TopBar.tsx         — datum pill (sr-Latn), <NotificationCenter />, "mygrid" brand
     BottomTabBar.tsx   — 6 tabova, fixed, left:260px, bottom:18px
 
@@ -103,16 +140,26 @@ components/
       SastanciCard.tsx
 
   notifications/
-    NotificationCenter.tsx  — orchestrator: spaja Bell + oba modala
-    NotificationBell.tsx    — bell dugme + dropdown (5 poslednjih, akcije)
+    NotificationCenter.tsx    — orchestrator: spaja Bell + oba modala
+    NotificationBell.tsx      — bell dugme + dropdown (5 poslednjih, akcije)
     SendNotificationModal.tsx — modal za slanje obaveštenja
-    HistoryModal.tsx         — istorija sa filterima, brisanje, task toggle
+    HistoryModal.tsx          — istorija sa filterima, brisanje, task toggle
 
 lib/
-  useNotifications.ts   — custom hook, localStorage persistencija
+  axios.ts            — Axios instanca (baseURL iz env, Bearer token interceptor)
+  auth.ts             — setToken / getToken / removeToken (cookie helpers, mg_token)
+  useUser.ts          — hook: fetchuje /api/{tenant}/user, redirect na /login
+  useNotifications.ts — custom hook (localStorage + API fallback)
 
 types/
-  notifications.ts      — Notification interface, Sektor union type
+  auth.ts             — AuthUser { id, name, email, phone, roles[] }
+  bank.ts             — Bank, BankTransaction, BankFormData, TransactionFormData, FinanceStats
+  supplier.ts         — Supplier, IncomingInvoice, IncomingInvoicePayment, SupplierFormData, InvoiceFormData
+  employee.ts         — Employee, EmployeeFormData, Sector, SalaryType
+  contract.ts         — Contract, ContractFormData
+  vacation.ts         — Vacation, VacationFormData
+  notification.ts     — Notification (backend API model)
+  notifications.ts    — Notification (localStorage model), Sektor union type
 ```
 
 ---
@@ -120,20 +167,30 @@ types/
 ## Tipovi podataka
 
 ```typescript
-// types/notifications.ts
+// types/notifications.ts (localStorage model)
 type Sektor = "svi" | "finansije" | "prodaja" | "gradiliste" | "administracija";
+interface Notification { id, title, message, audience: Sektor[], urgent, isTask, taskDone, createdAt, sentBy }
 
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  audience: Sektor[];
-  urgent: boolean;
-  isTask: boolean;
-  taskDone: boolean;
-  createdAt: string; // ISO string
-  sentBy: string;
-}
+// types/bank.ts
+interface Bank { id, name, account_number, current_balance, currency, note, created_at }
+interface BankTransaction { id, bank_id, date, type: "uplata"|"isplata", amount, description, reference_number, created_at }
+interface FinanceStats { total_balance, total_suppliers, total_invoices_unpaid, total_invoices_amount }
+
+// types/supplier.ts
+interface Supplier { id, name, pib, mb, address, city, email, phone, note, created_at }
+interface IncomingInvoice { id, supplier_id, supplier?, invoice_number, invoice_date, due_date, total_amount, paid_amount, status: "placeno"|"neplaceno"|"delimicno", note, document_path, payments? }
+interface IncomingInvoicePayment { id, incoming_invoice_id, amount, payment_date, note }
+
+// types/employee.ts
+type Sector = "gradiliste" | "pumpa" | "kancelarija" | "ostalo"
+type SalaryType = "fiksna" | "satnica" | "ugovor"
+interface Employee { id, first_name, last_name, email, phone, position, sector, salary_type, salary_amount, hire_date, note }
+
+// types/contract.ts
+interface Contract { id, employee_id, employee?, type, start_date, end_date, note }
+
+// types/vacation.ts
+interface Vacation { id, employee_id, employee?, start_date, end_date, type, status, note }
 ```
 
 ---
@@ -145,6 +202,37 @@ Vraća: `{ notifications, unreadCount, urgentUnread, readIds, send, markRead, ma
 
 - `send(title, message, audience, urgent, isTask)` — kreira novi, prepend, max 200
 - `unreadCount` — broj notifikacija koje nisu u `readIds`
+
+---
+
+## Zavisnosti
+
+```json
+"@tanstack/react-query": "^5"   — server state, caching, mutations za sve API pozive
+"react-hook-form": "^7"         — forme (useForm, useFieldArray, Controller)
+"axios": "^1"                   — HTTP klijent
+```
+
+TanStack Query Provider je registrovan u `app/layout.tsx`.  
+Svaka stranica koristi `useQuery` za čitanje i `useMutation` za pisanje — bez lokalnog `useState` za server podatke.
+
+---
+
+## UI komponente
+
+### FilterDropdown
+Styled filter dugme s popdown listom. Props: `value`, `onChange`, `placeholder`, `options`, `icon?`, `color?: "violet"|"green"|"brand"|"amber"`.  
+Aktivna selekcija mijenja boju border/bg/teksta prema odabranom `color`.
+
+### DatePicker
+Kalendar picker s portalom (fixed pozicija, auto gore/dole). Props: `value: string` (YYYY-MM-DD), `onChange`.  
+Exportuje `fmtDate(val)` helper za formatiranje u sr-Latn.
+
+### FormDropdown
+Jednostavan dropdown za forme. Props: `value`, `onChange`, `options: {value, label}[]`, `placeholder?`.
+
+### CustomSelect
+Select s opcionalnim prefiks labelom. Koristi se za paginaciju (rows per page). Props: `value`, `onChange`, `options`, `prefix?`.
 
 ---
 
@@ -172,7 +260,7 @@ BottomTabBar stavke: `dash`, `fin`, `pro`, `izv`, `dok`, `pre`
 - Sve komponente imaju `"use client"` direktive (App Router).
 - Ikoni primaju `w` i `h` props: `<IconBell w={20} h={20} />`.
 - CardHead prima `color: "blue" | "green" | "amber" | "gray" | "violet"`.
-- Ne koristiti Tailwind klase u JSX — samo inline styles sa `var()` referencama.
+- Tailwind klase u JSX su dozvoljene i mogu se kombinovati sa inline styles.
 - Ne dodavati komentare osim kad je razlog neočigledan.
 - TypeScript strict mode — nikad dva ista ključa u jednom style objektu.
 - Provjeri s `npx tsc --noEmit` pre nego što prijaviš zadatak kao gotov.
@@ -207,6 +295,25 @@ types/
 
 ## Backend
 
-Laravel REST API na `http://localhost:8000`.  
-Auth je implementiran i povezan. Modul API-ji (Finansije, Prodaja...) još nisu implementirani.  
-Kad se implementiraju, odgovarajuće komponente treba ažurirati da koriste API pozive umjesto mock podataka.
+Laravel REST API na `http://localhost:8000`. Auth i svi poslovni moduli su implementirani i povezani.
+
+### Implementirani API endpointi
+
+| Ruta | Controller | Uloga |
+|---|---|---|
+| `GET /api/{t}/finance/stats` | FinanceStatsController | vlasnik, menadzer-finansija |
+| `GET/POST/PUT/DELETE /api/{t}/banks` | BankController | vlasnik, menadzer-finansija |
+| `GET/POST/PUT/DELETE /api/{t}/banks/{id}/transactions` | BankTransactionController | vlasnik, menadzer-finansija |
+| `GET/POST/PUT/DELETE /api/{t}/finansije/suppliers` | SupplierController | vlasnik, menadzer-finansija |
+| `GET/POST/PUT/DELETE /api/{t}/finansije/incoming-invoices` | IncomingInvoiceController | vlasnik, menadzer-finansija |
+| `GET /api/{t}/finansije/incoming-invoices/{id}/document` | IncomingInvoiceController | vlasnik, menadzer-finansija |
+| `GET /api/{t}/admin/stats` | AdminStatsController | vlasnik, administrator |
+| `GET/POST/PUT/DELETE /api/{t}/employees` | EmployeeController | autentikovani |
+| `GET/POST/PUT/DELETE /api/{t}/contracts` | ContractController | vlasnik, administrator |
+| `GET/POST/PUT/DELETE /api/{t}/vacations` | VacationController | vlasnik, administrator |
+| `GET/POST/PATCH/DELETE /api/{t}/notifications` | NotificationController | autentikovani |
+| `GET/POST /api/{t}/users` | TenantUserController | vlasnik |
+
+### Ulazne fakture — plaćanja
+`IncomingInvoice` ima relacionih `payments: IncomingInvoicePayment[]`.  
+Status (`placeno`, `neplaceno`, `delimicno`) se automatski izračunava na osnovu sume plaćanja vs `total_amount`.
