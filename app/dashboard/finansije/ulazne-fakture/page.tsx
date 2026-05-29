@@ -12,7 +12,7 @@ import type {
   InvoiceFormData,
 } from "@/types/supplier";
 import {
-  EMPTY_SUPPLIER_FORM, EMPTY_INVOICE_FORM, invoiceToForm,
+  EMPTY_SUPPLIER_FORM, EMPTY_INVOICE_FORM, EMPTY_ITEM, invoiceToForm,
 } from "@/types/supplier";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
@@ -120,6 +120,16 @@ const inputStyle: React.CSSProperties = {
 };
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 5 };
 const errStyle: React.CSSProperties = { color: "var(--red)", fontSize: 12, margin: "4px 0 0" };
+
+const compactInput: React.CSSProperties = {
+  width: "100%", padding: "7px 8px",
+  border: "1.5px solid var(--border)", borderRadius: 7,
+  fontSize: 12.5, color: "#111418", background: "#fff",
+  fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+  transition: "border-color .15s",
+};
+
+const MERA_OPTIONS = ["kom", "m²", "m³", "m¹", "m", "kg", "t", "l", "sat", "dan", "mes", "%", "paušal"];
 
 // ─── Quick-add supplier modal ─────────────────────────────────────────────────
 
@@ -370,23 +380,31 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
   const { register, handleSubmit, reset, watch, setValue, control, formState: { errors, isSubmitting } } =
     useForm<InvoiceFormData>({ defaultValues: EMPTY_INVOICE_FORM });
 
-  const { fields, append, remove } = useFieldArray({ control, name: "payments" });
+  const { fields: paymentFields, append: appendPayment, remove: removePayment } =
+    useFieldArray({ control, name: "payments" });
 
-  const amtStr         = watch("amount_without_vat");
-  const vatStr         = watch("vat_amount");
-  const totalStr       = watch("total_amount");
-  const isCash         = watch("is_cash");
+  const { fields: itemFields, append: appendItem, remove: removeItem } =
+    useFieldArray({ control, name: "items" });
+
+  const totalStr        = watch("total_amount");
+  const amtStr          = watch("amount_without_vat");
+  const vatStr          = watch("vat_amount");
+  const vatRate         = watch("vat_rate");
+  const isCash          = watch("is_cash");
+  const watchedItems    = watch("items");
   const watchedPayments = watch("payments");
 
   const paidSum   = watchedPayments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
   const remaining = (parseFloat(totalStr) || 0) - paidSum;
 
-  // Auto-calculate total
+  // Recompute amounts from items + vat_rate in real time
   useEffect(() => {
-    const amt = parseFloat(amtStr) || 0;
-    const vat = parseFloat(vatStr) || 0;
-    setValue("total_amount", (amt + vat).toFixed(2), { shouldDirty: false, shouldValidate: false });
-  }, [amtStr, vatStr, setValue]);
+    const base = watchedItems.reduce((s, item) => s + (parseFloat(item.iznos) || 0), 0);
+    const vat  = base * (vatRate / 100);
+    setValue("amount_without_vat", base.toFixed(2), { shouldDirty: false, shouldValidate: false });
+    setValue("vat_amount",         vat.toFixed(2),  { shouldDirty: false, shouldValidate: false });
+    setValue("total_amount",       (base + vat).toFixed(2), { shouldDirty: false, shouldValidate: false });
+  }, [watchedItems, vatRate, setValue]);
 
   // Reset on open
   useEffect(() => {
@@ -435,9 +453,11 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
       if (data.due_date !== "") fd.append("due_date", data.due_date);
       if (data.description !== "") fd.append("description", data.description);
       fd.append("amount_without_vat", data.amount_without_vat);
+      fd.append("vat_rate", String(data.vat_rate));
       fd.append("vat_amount", data.vat_amount);
       fd.append("total_amount", data.total_amount);
       fd.append("is_cash", data.is_cash ? "1" : "0");
+
       if (!data.is_cash) {
         data.payments
           .filter(p => p.amount !== "" && p.payment_date !== "")
@@ -446,6 +466,18 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             fd.append(`payments[${i}][payment_date]`, p.payment_date);
           });
       }
+
+      data.items
+        .filter(item => item.iznos !== "" && parseFloat(item.iznos) > 0)
+        .forEach((item, i) => {
+          fd.append(`items[${i}][sektor]`, item.sektor);
+          fd.append(`items[${i}][jedinica]`, item.jedinica);
+          fd.append(`items[${i}][kategorija]`, item.kategorija);
+          fd.append(`items[${i}][kolicina]`, item.kolicina || "1");
+          fd.append(`items[${i}][mera]`, item.mera);
+          fd.append(`items[${i}][iznos]`, item.iznos);
+        });
+
       if (selectedFile) fd.append("document", selectedFile);
 
       if (editing) {
@@ -466,13 +498,10 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
     saveMut.mutate(data);
   }
 
-  function autoPdv20() {
-    const amt = parseFloat(amtStr) || 0;
-    setValue("vat_amount", (amt * 0.2).toFixed(2));
-  }
-
   if (!open) return null;
 
+  const baseDisplay  = (parseFloat(amtStr) || 0).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const vatDisplay   = (parseFloat(vatStr) || 0).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const totalDisplay = (parseFloat(totalStr) || 0).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
@@ -484,7 +513,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
         style={{ position: "fixed", inset: 0, background: "rgba(10,17,36,.42)", zIndex: 100, backdropFilter: "blur(2px)" }}
       />
 
-      <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 580, background: "#fff", zIndex: 101, display: "flex", flexDirection: "column", boxShadow: "-8px 0 40px rgba(16,24,40,.14)", animation: "slideInRight .25s cubic-bezier(.32,.72,.27,1)" }}>
+      <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 620, background: "#fff", zIndex: 101, display: "flex", flexDirection: "column", boxShadow: "-8px 0 40px rgba(16,24,40,.14)", animation: "slideInRight .25s cubic-bezier(.32,.72,.27,1)" }}>
         {/* Header */}
         <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -559,41 +588,191 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             </div>
           </div>
 
-          {/* Amounts */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Osnovica (bez PDV)</label>
-              <input
-                type="number" step="0.01" min="0" placeholder="0.00"
-                {...register("amount_without_vat", { required: "Osnovica je obavezna", min: { value: 0, message: "Mora biti ≥ 0" } })}
-                style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }}
-                onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-              />
-              {errors.amount_without_vat && <p style={errStyle}>{errors.amount_without_vat.message}</p>}
+          {/* ─── STAVKE FAKTURE ──────────────────────────────────────── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {/* Section header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--muted)" }}>
+                Stavke fakture
+              </span>
+              <button
+                type="button"
+                onClick={() => appendItem({ ...EMPTY_ITEM })}
+                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--green)", background: "var(--green-soft)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 7, padding: "4px 11px", cursor: "pointer", fontFamily: "inherit" }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                Dodaj stavku
+              </button>
             </div>
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }}>PDV</label>
-                <button
-                  type="button" onClick={autoPdv20}
-                  style={{ fontSize: 11, background: "transparent", border: "1px solid rgba(22,163,74,.4)", color: "var(--green)", padding: "2px 8px", borderRadius: 5, cursor: "pointer", fontFamily: "inherit", fontWeight: 600, transition: "background .12s" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--green-soft)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                >PDV 20%</button>
+
+            {/* Items table */}
+            <div style={{ borderRadius: 11, border: "1px solid var(--border-soft)", overflow: "hidden" }}>
+              {/* Table header */}
+              <div style={{ overflowX: "auto" }}>
+                <div style={{ minWidth: 590 }}>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "88px 76px 1fr 58px 82px 92px 30px",
+                    gap: 6,
+                    padding: "7px 10px",
+                    background: "rgba(248,250,255,0.80)",
+                    borderBottom: "1px solid var(--border-soft)",
+                  }}>
+                    {["SEKTOR", "JEDINICA", "KATEGORIJA", "KOL.", "MERA", "IZNOS (RSD)", ""].map((h, i) => (
+                      <div key={i} style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--muted)", textAlign: i === 5 ? "right" : "left" }}>
+                        {h}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Empty state */}
+                  {itemFields.length === 0 && (
+                    <div style={{ padding: "16px", textAlign: "center", color: "var(--muted)", fontSize: 13, background: "#fafafa" }}>
+                      Nema stavki — kliknite &ldquo;Dodaj stavku&rdquo;
+                    </div>
+                  )}
+
+                  {/* Item rows */}
+                  {itemFields.map((field, index) => (
+                    <div
+                      key={field.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "88px 76px 1fr 58px 82px 92px 30px",
+                        gap: 6,
+                        padding: "7px 10px",
+                        alignItems: "center",
+                        borderBottom: index < itemFields.length - 1 ? "1px solid var(--border-soft)" : "none",
+                        background: index % 2 === 0 ? "#fff" : "#fafafa",
+                      }}
+                    >
+                      {/* SEKTOR */}
+                      <input
+                        type="text"
+                        placeholder="Sektor"
+                        {...register(`items.${index}.sektor`)}
+                        style={compactInput}
+                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+                      />
+                      {/* JEDINICA */}
+                      <input
+                        type="text"
+                        placeholder="Jedinica"
+                        {...register(`items.${index}.jedinica`)}
+                        style={compactInput}
+                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+                      />
+                      {/* KATEGORIJA */}
+                      <input
+                        type="text"
+                        placeholder="Kategorija / opis..."
+                        {...register(`items.${index}.kategorija`)}
+                        style={compactInput}
+                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+                      />
+                      {/* KOLIČINA */}
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        placeholder="1"
+                        {...register(`items.${index}.kolicina`)}
+                        style={{ ...compactInput, textAlign: "right", fontFamily: "var(--font-geist-mono), monospace" }}
+                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+                      />
+                      {/* MERA */}
+                      <Controller
+                        name={`items.${index}.mera`}
+                        control={control}
+                        render={({ field: f }) => (
+                          <select
+                            value={f.value}
+                            onChange={(e) => f.onChange(e.target.value)}
+                            style={{ ...compactInput, cursor: "pointer" }}
+                          >
+                            {MERA_OPTIONS.map((m) => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        )}
+                      />
+                      {/* IZNOS */}
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        {...register(`items.${index}.iznos`)}
+                        style={{ ...compactInput, textAlign: "right", fontFamily: "var(--font-geist-mono), monospace" }}
+                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+                      />
+                      {/* X */}
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #fecaca", background: "#fef2f2", color: "var(--red)", cursor: "pointer", display: "grid", placeItems: "center", fontSize: 15, flexShrink: 0 }}
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <input
-                type="number" step="0.01" min="0" placeholder="0.00"
-                {...register("vat_amount", { required: "PDV je obavezan", min: { value: 0, message: "Mora biti ≥ 0" } })}
-                style={{ ...inputStyle, fontFamily: "var(--font-geist-mono), monospace" }}
-                onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-              />
-              {errors.vat_amount && <p style={errStyle}>{errors.vat_amount.message}</p>}
             </div>
           </div>
 
-          {/* Total (computed display) */}
+          {/* ─── PDV stopa + kalkulacija ─────────────────────────────── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 16px", background: "#fafafa", borderRadius: 11, border: "1px solid var(--border-soft)" }}>
+            {/* PDV rate capsule buttons */}
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Stopa PDV-a</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {([0, 10, 20] as const).map((rate) => {
+                  const active = vatRate === rate;
+                  return (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => setValue("vat_rate", rate, { shouldDirty: true })}
+                      style={{
+                        padding: "6px 18px",
+                        borderRadius: 20,
+                        border: `1.5px solid ${active ? "var(--green)" : "var(--border)"}`,
+                        background: active ? "var(--green)" : "#fff",
+                        color: active ? "#fff" : "#374151",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        transition: "all .12s",
+                      }}
+                    >{rate}%</button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Computed amounts grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>Osnovica (bez PDV)</div>
+                <div style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 15, fontWeight: 700, color: "#111418", letterSpacing: "-0.01em" }}>
+                  {baseDisplay} RSD
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--muted)", marginBottom: 4 }}>PDV ({vatRate}%)</div>
+                <div style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 15, fontWeight: 700, color: "#111418", letterSpacing: "-0.01em" }}>
+                  {vatDisplay} RSD
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Total display */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--green-soft)", borderRadius: 11, border: "1px solid rgba(22,163,74,.2)" }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--green)", opacity: 0.85 }}>Ukupno sa PDV</span>
             <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 19, fontWeight: 700, color: "var(--green)", letterSpacing: "-0.01em" }}>
@@ -603,7 +782,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
 
           {/* Payment section */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 16px", background: "#fafafa", borderRadius: 11, border: "1px solid var(--border-soft)" }}>
-
             {/* Cash checkbox */}
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }}>
               <input
@@ -622,12 +800,11 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             {/* Payments list — hidden when cash */}
             {!isCash && (
               <>
-                {/* Header row */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: "#374151" }}>Istorija uplata</span>
                   <button
                     type="button"
-                    onClick={() => append({ amount: "", payment_date: "" })}
+                    onClick={() => appendPayment({ amount: "", payment_date: "" })}
                     style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: "var(--green)", background: "var(--green-soft)", border: "1px solid rgba(22,163,74,.3)", borderRadius: 7, padding: "4px 11px", cursor: "pointer", fontFamily: "inherit" }}
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -635,15 +812,13 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
                   </button>
                 </div>
 
-                {/* Empty state */}
-                {fields.length === 0 && (
+                {paymentFields.length === 0 && (
                   <div style={{ padding: "14px", textAlign: "center", color: "var(--muted)", fontSize: 13, background: "#fff", borderRadius: 9, border: "1px dashed var(--border)" }}>
                     Nema evidentiranih uplata
                   </div>
                 )}
 
-                {/* Payment rows */}
-                {fields.map((field, index) => (
+                {paymentFields.map((field, index) => (
                   <div key={field.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 30px", gap: 8, alignItems: "start" }}>
                     <div>
                       {index === 0 && <div style={{ ...labelStyle, marginBottom: 4 }}>Iznos (RSD)</div>}
@@ -668,15 +843,14 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
                     <div style={{ paddingTop: index === 0 ? 21 : 0 }}>
                       <button
                         type="button"
-                        onClick={() => remove(index)}
+                        onClick={() => removePayment(index)}
                         style={{ width: 30, height: 36, borderRadius: 8, border: "1px solid #fecaca", background: "#fef2f2", color: "var(--red)", cursor: "pointer", display: "grid", placeItems: "center", fontSize: 17 }}
                       >×</button>
                     </div>
                   </div>
                 ))}
 
-                {/* Live sum */}
-                {fields.length > 0 && (
+                {paymentFields.length > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 13px", background: "#fff", borderRadius: 9, border: "1px solid var(--border-soft)", fontSize: 13 }}>
                     <span style={{ fontWeight: 600, color: "var(--green)" }}>
                       Uplaćeno: {paidSum.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RSD
@@ -711,7 +885,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
               <span style={{ fontWeight: 400, color: "var(--muted)" }}>(PDF, JPG, PNG — max 5 MB, opciono)</span>
             </label>
 
-            {/* Existing document indicator */}
             {editing?.document_path && !selectedFile && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 8, background: "var(--green-soft)", border: "1px solid rgba(22,163,74,.2)", borderRadius: 9, fontSize: 13 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -728,7 +901,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
               </div>
             )}
 
-            {/* Dropzone */}
             <div
               onClick={() => fileInputRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setDropHighlight(true); }}
@@ -741,10 +913,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
               }}
               style={{
                 border: `2px dashed ${selectedFile ? "var(--green)" : fileError ? "var(--red)" : dropHighlight ? "var(--green)" : "var(--border)"}`,
-                borderRadius: 10,
-                padding: "18px 16px",
-                textAlign: "center",
-                cursor: "pointer",
+                borderRadius: 10, padding: "18px 16px", textAlign: "center", cursor: "pointer",
                 transition: "border-color .15s, background .15s",
                 background: selectedFile ? "var(--green-soft)" : dropHighlight ? "#f0fdf4" : "#fafafa",
               }}
@@ -754,7 +923,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" />
                   </svg>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--green)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedFile.name}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--green)", maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedFile.name}</span>
                   <button
                     type="button"
                     onClick={(e) => {

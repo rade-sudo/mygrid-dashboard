@@ -58,13 +58,14 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ComponentType<{ w?: number; h?: number }>;
+  disabled?: boolean;
 }
 
 const NAV_ALL: NavItem[] = [
   { id: "dash", label: "Dashboard",      icon: IconHome   },
   { id: "fin",  label: "Finansije",      icon: IconDollar },
-  { id: "pro",  label: "Prodaja",        icon: IconBars   },
-  { id: "grad", label: "Gradilište",     icon: IconBuild  },
+  { id: "pro",  label: "Prodaja",        icon: IconBars,  disabled: true },
+  { id: "grad", label: "Gradilište",     icon: IconBuild, disabled: true },
   { id: "adm",  label: "Administracija", icon: IconDoc    },
   { id: "obv",  label: "Obaveštenja",   icon: IconBell   },
 ];
@@ -465,6 +466,32 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
               const Ico = item.icon;
               const isActive = activeId === item.id;
               const clr = NAV_COLORS[item.id] ?? NAV_COLORS.dash;
+
+              if (item.disabled) {
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 14,
+                      padding: "11px 14px", borderRadius: 10,
+                      opacity: 0.45, cursor: "default",
+                    }}
+                  >
+                    <span style={{ color: "#4b5563", flexShrink: 0 }}>
+                      <Ico w={20} h={20} />
+                    </span>
+                    <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: "#1a1f2e" }}>{item.label}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase",
+                      color: "var(--muted)", border: "1px solid var(--border)", borderRadius: 5,
+                      padding: "2px 7px", flexShrink: 0,
+                    }}>
+                      Uskoro
+                    </span>
+                  </div>
+                );
+              }
+
               return (
                 <button
                   key={item.id}

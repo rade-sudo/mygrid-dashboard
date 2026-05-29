@@ -72,6 +72,7 @@ function ModuleCard({
         display: "flex",
         flexDirection: "column",
         gap: 16,
+        width: "100%",
       }}
       onMouseEnter={(e) => {
         if (!available) return;
@@ -288,10 +289,10 @@ export default function AdministracijaPage() {
           <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 14 }}>
             Moduli
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 360px))", gap: 16, alignContent: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 360px))", gap: 16, alignItems: "stretch" }}>
             {MODULES.map((mod) =>
               mod.available ? (
-                <Link key={mod.id} href={mod.href} style={{ textDecoration: "none", display: "block" }}>
+                <Link key={mod.id} href={mod.href} style={{ textDecoration: "none", display: "flex" }}>
                   <ModuleCard {...mod} />
                 </Link>
               ) : (

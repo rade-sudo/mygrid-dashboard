@@ -64,6 +64,8 @@
   --sidebar-radius: 18px;
   --sidebar-top-offset: 14px;
   --sidebar-height: calc(100vh - 28px);
+  --main-margin: 14px 14px 14px 0;
+  --main-radius: 18px;
 }
 
 @supports (padding: env(safe-area-inset-bottom)) {
@@ -117,6 +119,8 @@
     --sidebar-radius: 0;
     --sidebar-top-offset: 0;
     --sidebar-height: 100vh;
+    --main-margin: 0;
+    --main-radius: 0;
   }
 }
 
@@ -159,7 +163,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-#__next, main {
+#__next {
   min-height: 100vh;
 }
 

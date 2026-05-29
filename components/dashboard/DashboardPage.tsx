@@ -431,7 +431,7 @@ export default function DashboardPage({ user, onLogout }: DashboardPageProps) {
           )}
         </div>
 
-        <BottomTabBar activeId={activeTab} onTab={handleTab} />
+        {/* <BottomTabBar activeId={activeTab} onTab={handleTab} /> */}
       </main>
     </div>
   );

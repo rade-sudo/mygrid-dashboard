@@ -39,6 +39,28 @@ export interface PaymentEntry {
   payment_date: string;
 }
 
+export interface InvoiceItem {
+  id: number;
+  incoming_invoice_id: number;
+  sektor: string | null;
+  jedinica: string | null;
+  kategorija: string | null;
+  kolicina: string;
+  mera: string;
+  iznos: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceItemFormData {
+  sektor: string;
+  jedinica: string;
+  kategorija: string;
+  kolicina: string;
+  mera: string;
+  iznos: string;
+}
+
 export interface IncomingInvoice {
   id: number;
   supplier_id: number;
@@ -48,11 +70,13 @@ export interface IncomingInvoice {
   due_date: string | null;
   description: string | null;
   amount_without_vat: string;
+  vat_rate: number;
   vat_amount: string;
   total_amount: string;
   status: "neplaceno" | "placeno" | "delimicno";
   is_cash: boolean;
   payments: InvoicePayment[];
+  items: InvoiceItem[];
   document_path: string | null;
   created_at: string;
   updated_at: string;
@@ -64,22 +88,35 @@ export interface InvoiceFormData {
   due_date: string;
   description: string;
   amount_without_vat: string;
+  vat_rate: number;
   vat_amount: string;
   total_amount: string;
   is_cash: boolean;
   payments: PaymentEntry[];
+  items: InvoiceItemFormData[];
 }
+
+export const EMPTY_ITEM: InvoiceItemFormData = {
+  sektor: "",
+  jedinica: "",
+  kategorija: "",
+  kolicina: "1",
+  mera: "kom",
+  iznos: "",
+};
 
 export const EMPTY_INVOICE_FORM: InvoiceFormData = {
   invoice_number: "",
   issue_date: "",
   due_date: "",
   description: "",
-  amount_without_vat: "",
-  vat_amount: "0",
+  amount_without_vat: "0.00",
+  vat_rate: 20,
+  vat_amount: "0.00",
   total_amount: "0.00",
   is_cash: false,
   payments: [],
+  items: [{ ...EMPTY_ITEM }],
 };
 
 export function invoiceToForm(inv: IncomingInvoice): InvoiceFormData {
@@ -89,6 +126,7 @@ export function invoiceToForm(inv: IncomingInvoice): InvoiceFormData {
     due_date:           inv.due_date ?? "",
     description:        inv.description ?? "",
     amount_without_vat: inv.amount_without_vat,
+    vat_rate:           inv.vat_rate ?? 0,
     vat_amount:         inv.vat_amount,
     total_amount:       inv.total_amount,
     is_cash:            inv.is_cash,
@@ -96,5 +134,15 @@ export function invoiceToForm(inv: IncomingInvoice): InvoiceFormData {
       amount:       p.amount,
       payment_date: p.payment_date,
     })),
+    items: (inv.items ?? []).length > 0
+      ? inv.items.map(item => ({
+          sektor:     item.sektor ?? "",
+          jedinica:   item.jedinica ?? "",
+          kategorija: item.kategorija ?? "",
+          kolicina:   item.kolicina,
+          mera:       item.mera,
+          iznos:      item.iznos,
+        }))
+      : [{ ...EMPTY_ITEM }],
   };
 }
