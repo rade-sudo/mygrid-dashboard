@@ -832,13 +832,8 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
                     </div>
                     <div>
                       {index === 0 && <div style={{ ...labelStyle, marginBottom: 4 }}>Datum uplate</div>}
-                      <input
-                        type="date"
-                        {...register(`payments.${index}.payment_date`, { required: true })}
-                        style={inputStyle}
-                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-                      />
+                      <Controller name={`payments.${index}.payment_date`} control={control} rules={{ required: true }}
+                        render={({ field }) => <DatePicker value={field.value} onChange={field.onChange} />} />
                     </div>
                     <div style={{ paddingTop: index === 0 ? 21 : 0 }}>
                       <button

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
-import { IconDollar, IconInvoice, IconCard, IconUsers } from "@/components/ui/icons";
+import { IconDollar, IconInvoice, IconCard, IconUsers, IconWallet, IconActivity, IconDoc } from "@/components/ui/icons";
 import type { FinanceStats } from "@/types/bank";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
@@ -40,8 +40,16 @@ const MODULES = [
     title: "Izlazne fakture",
     description: "Kreiranje i praćenje izlaznih faktura i prihoda.",
     Icon: IconInvoice,
-    href: "#",
-    available: false,
+    href: "/dashboard/finansije/izlazne-fakture",
+    available: true,
+  },
+  {
+    id: "klijenti",
+    title: "Klijenti",
+    description: "Evidencija i upravljanje klijentima firme.",
+    Icon: IconUsers,
+    href: "/dashboard/finansije/klijenti",
+    available: true,
   },
 ];
 
@@ -117,13 +125,14 @@ function ModuleCard({
 
 // ─── KPI card + skeleton ─────────────────────────────────────────────────────
 
-function KpiCard({ icon, iconBg, iconColor, value, label, sub }: {
+function KpiCard({ icon, iconBg, iconColor, value, label, sub, valueColor }: {
   icon: React.ReactNode;
   iconBg: string;
   iconColor: string;
   value: string;
   label: string;
   sub: string;
+  valueColor?: string;
 }) {
   return (
     <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 16, padding: "20px 22px", boxShadow: "var(--shadow-card)", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -131,7 +140,7 @@ function KpiCard({ icon, iconBg, iconColor, value, label, sub }: {
         {icon}
       </div>
       <div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: "#111418", letterSpacing: "-0.02em", lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: 23, fontWeight: 800, color: valueColor ?? "#111418", letterSpacing: "-0.02em", lineHeight: 1 }}>{value}</div>
         <div style={{ fontSize: 14, fontWeight: 600, color: "#374151", marginTop: 4 }}>{label}</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>{sub}</div>
       </div>
@@ -193,19 +202,72 @@ export default function FinansijePage() {
           <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 14 }}>
             Statistike
           </div>
-          <div className="grid w-full gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid w-full gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {isLoading || !stats ? (
-              <KpiSkeleton />
-            ) : (
-              <KpiCard
-                iconBg="var(--green-soft)"
-                iconColor="var(--green)"
-                icon={<IconDollar w={22} h={22} />}
-                value={formatCurrency(stats.total_bank_balance)}
-                label="Ukupno na računima"
-                sub="Zbir svih bankovnih salda"
-              />
-            )}
+              <>
+                <KpiSkeleton />
+                <KpiSkeleton />
+                <KpiSkeleton />
+                <KpiSkeleton />
+                <KpiSkeleton />
+              </>
+            ) : (() => {
+              const monthName = new Date().toLocaleDateString("sr-Latn", { month: "long" });
+              return (
+                <>
+                  <KpiCard
+                    iconBg="var(--green-soft)"
+                    iconColor="var(--green)"
+                    icon={<IconDollar w={22} h={22} />}
+                    value={formatCurrency(stats.total_bank_balance)}
+                    label="Stanje na računima"
+                    sub="Zbir svih bankovnih salda"
+                  />
+                  <KpiCard
+                    iconBg={stats.total_invoices_outstanding > 0 ? "#fdf3e3" : "var(--green-soft)"}
+                    iconColor={stats.total_invoices_outstanding > 0 ? "#d97706" : "var(--green)"}
+                    icon={<IconInvoice w={22} h={22} />}
+                    value={stats.total_invoices_outstanding > 0 ? formatCurrency(stats.total_invoices_outstanding) : "Izmireno"}
+                    valueColor={stats.total_invoices_outstanding === 0 ? "var(--green)" : undefined}
+                    label="Saldo ulaznih faktura"
+                    sub={
+                      stats.total_invoices_outstanding > 0
+                        ? `${stats.outstanding_supplier_count} ${stats.outstanding_supplier_count === 1 ? "dobavljač" : "dobavljača"} · ukupno za isplatu`
+                        : "Sve fakture su izmirene"
+                    }
+                  />
+                  <KpiCard
+                    iconBg={stats.total_outbound_outstanding > 0 ? "var(--brand-soft)" : "var(--green-soft)"}
+                    iconColor={stats.total_outbound_outstanding > 0 ? "var(--brand)" : "var(--green)"}
+                    icon={<IconWallet w={22} h={22} />}
+                    value={stats.total_outbound_outstanding > 0 ? formatCurrency(stats.total_outbound_outstanding) : "Sve naplaćeno"}
+                    valueColor={stats.total_outbound_outstanding === 0 ? "var(--green)" : undefined}
+                    label="Potraživanja od klijenata"
+                    sub={
+                      stats.total_outbound_outstanding > 0
+                        ? `${stats.outstanding_client_count} ${stats.outstanding_client_count === 1 ? "klijent duguje" : "klijenata duguje"}`
+                        : "Nema otvorenih potraživanja"
+                    }
+                  />
+                  <KpiCard
+                    iconBg="#fdf3e3"
+                    iconColor="#d97706"
+                    icon={<IconActivity w={22} h={22} />}
+                    value={formatCurrency(stats.monthly_incoming_vat)}
+                    label={`Ulazni PDV · ${monthName}`}
+                    sub={`Fakturisani PDV za ${monthName}`}
+                  />
+                  <KpiCard
+                    iconBg="var(--brand-soft)"
+                    iconColor="var(--brand)"
+                    icon={<IconDoc w={22} h={22} />}
+                    value={formatCurrency(stats.monthly_outbound_vat)}
+                    label={`Izlazni PDV · ${monthName}`}
+                    sub={`PDV naplaćen od klijenata`}
+                  />
+                </>
+              );
+            })()}
           </div>
         </div>
 

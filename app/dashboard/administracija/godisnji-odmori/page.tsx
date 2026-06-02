@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import PageShell from "@/components/layout/PageShell";
@@ -18,7 +18,7 @@ const EMP_BASE = `/api/${TENANT}/employees`;
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("sr-Latn", {
+  return new Date(iso + "T00:00:00").toLocaleDateString("sr-Latn", {
     day: "2-digit", month: "2-digit", year: "numeric",
   });
 }
@@ -26,8 +26,8 @@ function formatDate(iso: string): string {
 function isActiveNow(startDate: string, endDate: string): boolean {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
   return start <= today && end >= today;
 }
 
@@ -104,6 +104,175 @@ const tdStyle: React.CSSProperties = {
   borderBottom: "1px solid var(--border-soft)",
   verticalAlign: "middle",
 };
+
+// ─── Employee combobox ───────────────────────────────────────────────────────
+
+interface EmpComboboxProps {
+  value: Employee | null;
+  onChange: (e: Employee | null) => void;
+  employees: Employee[];
+  hasError: boolean;
+}
+
+function EmployeeCombobox({ value, onChange, employees, hasError }: EmpComboboxProps) {
+  const [inputText, setInputText] = useState(value ? `${value.first_name} ${value.last_name}` : "");
+  const [open, setOpen] = useState(false);
+  const [dropStyle, setDropStyle] = useState<React.CSSProperties>({});
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setInputText(value ? `${value.first_name} ${value.last_name}` : "");
+    if (value) setOpen(false);
+  }, [value]);
+
+  useLayoutEffect(() => {
+    if (open && wrapRef.current) {
+      const r = wrapRef.current.getBoundingClientRect();
+      setDropStyle({ position: "fixed", top: r.bottom + 4, left: r.left, width: r.width, zIndex: 200 });
+    }
+  }, [open, inputText]);
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setInputText(value ? `${value.first_name} ${value.last_name}` : "");
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [value]);
+
+  const query = inputText.toLowerCase();
+  const filtered = employees.filter((e) =>
+    `${e.first_name} ${e.last_name}`.toLowerCase().includes(query) ||
+    e.position.toLowerCase().includes(query)
+  );
+
+  const borderColor = hasError ? "var(--red)" : open ? "var(--violet)" : value ? "var(--violet)" : "var(--border)";
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <div style={{ position: "relative" }}>
+        <input
+          type="text"
+          value={inputText}
+          onChange={(e) => { setInputText(e.target.value); onChange(null); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Počnite kucati ime ili poziciju..."
+          autoComplete="off"
+          style={{ ...inputStyle, borderColor, paddingRight: value ? 32 : 12 }}
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => { onChange(null); setInputText(""); setOpen(false); }}
+            style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", width: 20, height: 20, borderRadius: "50%", border: "none", background: "#e5e7eb", color: "#6b7280", cursor: "pointer", fontSize: 14, display: "grid", placeItems: "center", lineHeight: 1 }}
+          >×</button>
+        )}
+      </div>
+
+      {value && (
+        <div style={{ marginTop: 5, display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--violet)", fontWeight: 600 }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+          {value.first_name} {value.last_name} · {value.position}
+        </div>
+      )}
+
+      {open && (
+        <div style={{ ...dropStyle, background: "#fff", border: "1.5px solid var(--violet)", borderRadius: 11, boxShadow: "0 8px 28px rgba(16,24,40,.13)", overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
+          {inputText.length < 2 ? (
+            <div style={{ padding: "12px 14px", fontSize: 13, color: "var(--muted)" }}>Ukucajte najmanje 2 slova za pretragu...</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--muted)" }}>Nema rezultata za &ldquo;{inputText}&rdquo;</div>
+          ) : (
+            filtered.map((emp) => (
+              <button
+                key={emp.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { onChange(emp); setOpen(false); }}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", background: "transparent", border: "none", borderBottom: "1px solid var(--border-soft)", cursor: "pointer", fontFamily: "inherit", transition: "background .1s" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--violet-soft)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#111418" }}>{emp.first_name} {emp.last_name}</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>{emp.position} · {emp.sector}</div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Over-budget confirm dialog ──────────────────────────────────────────────
+
+function OverBudgetConfirm({
+  employeeName,
+  remainingDays,
+  requestedDays,
+  year,
+  onConfirm,
+  onCancel,
+}: {
+  employeeName: string;
+  remainingDays: number;
+  requestedDays: number;
+  year: number;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <div
+        onClick={onCancel}
+        style={{ position: "fixed", inset: 0, background: "rgba(10,17,36,.42)", zIndex: 202, backdropFilter: "blur(2px)" }}
+      />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%",
+        transform: "translate(-50%,-50%)",
+        background: "#fff", borderRadius: 18, padding: "32px 28px 24px",
+        width: 400, zIndex: 203,
+        boxShadow: "0 20px 60px rgba(16,24,40,.18)",
+        textAlign: "center",
+      }}>
+        <div style={{ width: 52, height: 52, borderRadius: 14, background: "#fdf3e3", color: "#d97706", display: "grid", placeItems: "center", margin: "0 auto 16px" }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "#111418", marginBottom: 10 }}>
+          Nedovoljno dana odmora
+        </div>
+        <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.7, marginBottom: 24 }}>
+          <strong>{employeeName}</strong> ima još{" "}
+          <span style={{ fontWeight: 700, color: "#d97706" }}>{remainingDays} {remainingDays === 1 ? "dan" : "dana"}</span>{" "}
+          godišnjeg odmora za {year}, a odabrani period traje{" "}
+          <span style={{ fontWeight: 700, color: "#111418" }}>{requestedDays} {requestedDays === 1 ? "dan" : "dana"}</span>.
+          <br />
+          <span style={{ fontSize: 13 }}>Da li ste sigurni da želite nastaviti?</span>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button
+            onClick={onCancel}
+            style={{ padding: "9px 20px", border: "1px solid var(--border)", borderRadius: 9, background: "#fff", color: "#374151", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            Odustani
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: "9px 20px", border: "none", borderRadius: 9, background: "#d97706", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            Nastavi svejedno
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 // ─── Delete confirm dialog ────────────────────────────────────────────────────
 
@@ -190,6 +359,8 @@ interface SlideOverProps {
 
 function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
   const qc = useQueryClient();
+  const currentYear = new Date().getFullYear();
+  const [pendingData, setPendingData] = useState<VacationFormData | null>(null);
 
   const { data: employees = [] } = useQuery<Employee[]>({
     queryKey: ["employees", TENANT],
@@ -212,10 +383,46 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
   useEffect(() => {
     if (open) {
       reset(editing ? vacationToForm(editing) : EMPTY_VACATION_FORM);
+      setPendingData(null);
     }
   }, [open, editing, reset]);
 
-  const startDate = watch("start_date");
+  const startDate        = watch("start_date");
+  const watchedEndDate   = watch("end_date");
+  const watchedType      = watch("type");
+  const watchedEmpId     = watch("employee_id");
+
+  const isGodisnji       = watchedType === "godisnji";
+  const selectedEmployee = isGodisnji ? employees.find((e) => e.id === Number(watchedEmpId)) : undefined;
+  const vacDaysTotal     = selectedEmployee?.vacation_days_total ?? null;
+
+  const { data: existingVacations = [] } = useQuery<Vacation[]>({
+    queryKey: ["emp-vacations-form", watchedEmpId, currentYear],
+    queryFn: () =>
+      api.get(`${BASE}?employee_id=${watchedEmpId}&type=godisnji&year=${currentYear}`)
+        .then((r) => r.data),
+    enabled: isGodisnji && !!watchedEmpId,
+    staleTime: 30_000,
+  });
+
+  const usedDays = existingVacations
+    .filter((v) => !editing || v.id !== editing.id)
+    .reduce((acc, v) => {
+      const ys = new Date(`${currentYear}-01-01`);
+      const ye = new Date(`${currentYear}-12-31`);
+      const s  = new Date(v.start_date) < ys ? ys : new Date(v.start_date);
+      const e  = new Date(v.end_date)   > ye ? ye : new Date(v.end_date);
+      return acc + Math.max(0, Math.round((e.getTime() - s.getTime()) / 86_400_000) + 1);
+    }, 0);
+
+  const remainingDays  = vacDaysTotal != null ? vacDaysTotal - usedDays : null;
+  const requestedDays  =
+    startDate && watchedEndDate && watchedEndDate >= startDate
+      ? Math.round((new Date(watchedEndDate).getTime() - new Date(startDate).getTime()) / 86_400_000) + 1
+      : 0;
+
+  const isBlocked = isGodisnji && remainingDays !== null && remainingDays <= 0;
+  const isOverBudget = isGodisnji && remainingDays !== null && remainingDays > 0 && requestedDays > remainingDays;
 
   const saveMut = useMutation({
     mutationFn: (data: VacationFormData) => {
@@ -231,9 +438,20 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vacations", TENANT] });
       qc.invalidateQueries({ queryKey: ["employees", TENANT] });
+      qc.invalidateQueries({ queryKey: ["employee-vacations"] });
+      setPendingData(null);
       onClose();
     },
   });
+
+  const handleFormSubmit = (data: VacationFormData) => {
+    if (isBlocked) return;
+    if (isGodisnji && remainingDays !== null && requestedDays > remainingDays) {
+      setPendingData(data);
+      return;
+    }
+    saveMut.mutate(data);
+  };
 
   if (!open) return null;
 
@@ -291,7 +509,7 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
         {/* Form */}
         <form
           id="vacation-form"
-          onSubmit={handleSubmit((d) => saveMut.mutate(d))}
+          onSubmit={handleSubmit(handleFormSubmit)}
           style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}
         >
           {/* Zaposleni */}
@@ -300,16 +518,13 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
             <Controller
               name="employee_id"
               control={control}
-              rules={{ required: "Odaberi zaposlenog" }}
+              rules={{ validate: (v) => !!Number(v) || "Odaberi zaposlenog" }}
               render={({ field }) => (
-                <FormDropdown
-                  value={String(field.value)}
-                  onChange={field.onChange}
-                  options={activeEmployees.map((emp) => ({
-                    value: String(emp.id),
-                    label: `${emp.first_name} ${emp.last_name} (${emp.position})`,
-                  }))}
-                  placeholder="— Odaberi zaposlenog —"
+                <EmployeeCombobox
+                  value={employees.find((e) => e.id === Number(field.value)) ?? null}
+                  onChange={(emp) => field.onChange(emp?.id ?? "")}
+                  employees={activeEmployees}
+                  hasError={!!errors.employee_id}
                 />
               )}
             />
@@ -333,6 +548,54 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
             />
             {errors.type && <p style={errStyle}>{errors.type.message}</p>}
           </div>
+
+          {/* Vacation days info/warning banner */}
+          {isGodisnji && selectedEmployee && vacDaysTotal != null && (
+            <div style={{
+              display: "flex", alignItems: "flex-start", gap: 10,
+              padding: "11px 13px",
+              borderRadius: 10,
+              border: `1px solid ${isBlocked ? "#fecaca" : "#e5e7eb"}`,
+              background: isBlocked ? "#fef2f2" : "#f9fafb",
+            }}>
+              {isBlocked ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+              )}
+              <div style={{ flex: 1 }}>
+                {isBlocked ? (
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#dc2626" }}>
+                    Radnik nema raspoloživih dana godišnjeg odmora za {currentYear}.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: "#374151" }}>
+                    Raspoloživo za {currentYear}:{" "}
+                    <span style={{ fontWeight: 700, color: remainingDays! <= 5 ? "#d97706" : "#16a34a" }}>
+                      {remainingDays} {remainingDays === 1 ? "dan" : "dana"}
+                    </span>
+                    <span style={{ color: "var(--muted)", marginLeft: 4 }}>
+                      (od ukupno {vacDaysTotal})
+                    </span>
+                    {requestedDays > 0 && (
+                      <span style={{ display: "block", marginTop: 3, fontSize: 12.5, color: isOverBudget ? "#d97706" : "var(--muted)" }}>
+                        Odabrani period: <strong>{requestedDays} {requestedDays === 1 ? "dan" : "dana"}</strong>
+                        {isOverBudget && (
+                          <span style={{ color: "#d97706", fontWeight: 600 }}>
+                            {" "}— {requestedDays - remainingDays!} više od raspoloživog
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Datumi */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -401,12 +664,14 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
           <button
             type="submit"
             form="vacation-form"
-            disabled={isSubmitting || saveMut.isPending}
+            disabled={isSubmitting || saveMut.isPending || isBlocked}
+            title={isBlocked ? "Radnik nema raspoloživih dana godišnjeg odmora" : undefined}
             style={{
               padding: "9px 22px", border: "none", borderRadius: 9,
-              background: isSubmitting || saveMut.isPending ? "#a78bfa" : "var(--violet)",
-              color: "#fff", fontSize: 14, fontWeight: 600,
-              cursor: isSubmitting || saveMut.isPending ? "not-allowed" : "pointer",
+              background: isBlocked ? "#d1d5db" : (isSubmitting || saveMut.isPending) ? "#a78bfa" : "var(--violet)",
+              color: isBlocked ? "#6b7280" : "#fff",
+              fontSize: 14, fontWeight: 600,
+              cursor: isBlocked || isSubmitting || saveMut.isPending ? "not-allowed" : "pointer",
               fontFamily: "inherit",
             }}
           >
@@ -415,6 +680,18 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
               : editing ? "Sačuvaj izmene" : "Zakaži odmor"}
           </button>
         </div>
+
+        {/* Over-budget confirmation */}
+        {pendingData && selectedEmployee && remainingDays !== null && (
+          <OverBudgetConfirm
+            employeeName={`${selectedEmployee.first_name} ${selectedEmployee.last_name}`}
+            remainingDays={remainingDays}
+            requestedDays={requestedDays}
+            year={currentYear}
+            onConfirm={() => saveMut.mutate(pendingData)}
+            onCancel={() => setPendingData(null)}
+          />
+        )}
       </div>
     </>
   );

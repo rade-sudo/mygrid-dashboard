@@ -21,6 +21,12 @@ export interface BankTransaction {
 
 export interface FinanceStats {
   total_bank_balance: number;
+  total_invoices_outstanding: number;
+  outstanding_supplier_count: number;
+  total_outbound_outstanding: number;
+  outstanding_client_count: number;
+  monthly_incoming_vat: number;
+  monthly_outbound_vat: number;
 }
 
 export interface BankFormData {

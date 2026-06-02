@@ -1,7 +1,12 @@
 "use client";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import CardHead from "@/components/dashboard/CardHead";
 import { IconCard, IconInvoice, IconActivity } from "@/components/ui/icons";
+import api from "@/lib/axios";
+import type { FinanceStats } from "@/types/bank";
+
+const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 
 function KpiCard({
   icon,
@@ -120,14 +125,26 @@ export function SupplierSaldoCard() {
 }
 
 export function PdvCard() {
+  const monthName = new Date().toLocaleDateString("sr-Latn", { month: "long" });
+
+  const { data: stats } = useQuery<FinanceStats>({
+    queryKey: ["finance-stats", TENANT],
+    queryFn: ({ signal }) =>
+      api.get(`/api/${TENANT}/finance/stats`, { signal }).then((r) => r.data),
+    staleTime: 60_000,
+  });
+
+  const vat = stats?.monthly_incoming_vat ?? 0;
+  const formatted = vat.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   return (
     <KpiCard
       icon={IconActivity}
       color="amber"
-      title="Ulazni PDV · maj"
-      big="0,00"
+      title={`Ulazni PDV · ${monthName}`}
+      big={formatted}
       unit="RSD"
-      sub="RSD · samo maj"
+      sub={`Fakturisani PDV · samo ${monthName}`}
     />
   );
 }

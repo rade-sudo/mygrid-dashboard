@@ -20,6 +20,8 @@ export interface Employee {
   salary_type: SalaryType;
   hourly_rate: string | null;
   fixed_salary: string | null;
+  vacation_days_total: number | null;
+  is_permanent: boolean;
   is_on_vacation: boolean;
   created_at: string;
   updated_at: string;
@@ -42,6 +44,8 @@ export interface EmployeeFormData {
   salary_type: SalaryType;
   hourly_rate: string;
   fixed_salary: string;
+  vacation_days_total: string;
+  is_permanent: boolean;
 }
 
 export const EMPTY_FORM: EmployeeFormData = {
@@ -61,4 +65,6 @@ export const EMPTY_FORM: EmployeeFormData = {
   salary_type: "fiksna_plata",
   hourly_rate: "",
   fixed_salary: "",
+  vacation_days_total: "",
+  is_permanent: false,
 };
