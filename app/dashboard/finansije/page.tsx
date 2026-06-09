@@ -51,6 +51,14 @@ const MODULES = [
     href: "/dashboard/finansije/klijenti",
     available: true,
   },
+  {
+    id: "plate",
+    title: "Plate",
+    description: "Obračun, evidencija fiksnih plata i ostvarenih radnih sati zaposlenih.",
+    Icon: IconWallet,
+    href: "/dashboard/finansije/plate",
+    available: true,
+  },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
