@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
-import { IconDollar, IconUsers, IconActivity, IconCal } from "@/components/ui/icons";
+import { IconDollar, IconUsers, IconActivity, IconCal, IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
 import FilterDropdown from "@/components/ui/FilterDropdown";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 
@@ -248,6 +249,20 @@ function PayrollBudgetCard({ paidTotal, totalCost, isLoading, monthName }: {
   );
 }
 
+// ─── Sort indicator ──────────────────────────────────────────────────────────
+
+function SortIndicator({ isActive, direction }: {
+  isActive: boolean;
+  direction: "asc" | "desc" | null;
+}) {
+  if (!isActive) {
+    return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  }
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PlatePage() {
@@ -295,7 +310,8 @@ export default function PlatePage() {
   const monthName = new Date(selectedMonth + "-15").toLocaleDateString("sr-Latn", { month: "long" });
   const selectedMonthLabel = MONTH_OPTIONS.find((o) => o.value === selectedMonth)?.label ?? selectedMonth;
 
-  const rows: PayrollRow[] = (data?.employees ?? []).map(toRow);
+  const rows = useMemo<PayrollRow[]>(() => (data?.employees ?? []).map(toRow), [data]);
+  const { items: sortedRows, requestSort, sortConfig } = useSortableData<PayrollRow>(rows);
   const kpi = data?.kpi;
 
   const fixedTotal    = kpi?.fixed_total ?? 0;
@@ -414,12 +430,42 @@ export default function PlatePage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Radnik</th>
-                    <th style={thStyle}>Tip plate</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Osnovica</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Ostvareni sati</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Ukupno za isplatu</th>
-                    <th style={{ ...thStyle, textAlign: "center" }}>Status</th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("name")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Radnik
+                        <SortIndicator isActive={sortConfig?.key === "name"} direction={sortConfig && sortConfig.key === "name" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("type")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Tip plate
+                        <SortIndicator isActive={sortConfig?.key === "type"} direction={sortConfig && sortConfig.key === "type" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("base")}>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+                        Osnovica
+                        <SortIndicator isActive={sortConfig?.key === "base"} direction={sortConfig && sortConfig.key === "base" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("hours")}>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+                        Ostvareni sati
+                        <SortIndicator isActive={sortConfig?.key === "hours"} direction={sortConfig && sortConfig.key === "hours" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("total")}>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+                        Ukupno za isplatu
+                        <SortIndicator isActive={sortConfig?.key === "total"} direction={sortConfig && sortConfig.key === "total" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, textAlign: "center", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("status")}>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                        Status
+                        <SortIndicator isActive={sortConfig?.key === "status"} direction={sortConfig && sortConfig.key === "status" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -435,7 +481,7 @@ export default function PlatePage() {
                         Nema podataka za odabrani period.
                       </td>
                     </tr>
-                  ) : rows.map((row) => (
+                  ) : sortedRows.map((row) => (
                     <tr
                       key={row.id}
                       style={{ background: "transparent", transition: "background .1s" }}

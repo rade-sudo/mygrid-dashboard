@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import PageShell from "@/components/layout/PageShell";
-import { IconCaretSm } from "@/components/ui/icons";
+import { IconCaretSm, IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 import DatePicker from "@/components/ui/DatePicker";
 import FormDropdown from "@/components/ui/FormDropdown";
 import api from "@/lib/axios";
@@ -1421,6 +1422,15 @@ function EmployeeForm({ open, onClose, employee }: EmployeeFormProps) {
   );
 }
 
+type SortableEmployee = Employee & { salary_sort: number };
+
+function SortIndicator({ isActive, direction }: { isActive: boolean; direction: "asc" | "desc" | null }) {
+  if (!isActive) return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ZaposleniPage() {
@@ -1441,13 +1451,23 @@ export default function ZaposleniPage() {
     },
   });
 
-  const filteredEmployees = employees.filter((emp) => {
-    if (!statusFilter) return true;
-    if (statusFilter === "aktivan") return !emp.is_on_vacation && emp.status === "active";
-    if (statusFilter === "na_odmoru") return emp.is_on_vacation === true;
-    if (statusFilter === "neaktivan") return emp.status === "inactive";
-    return true;
-  });
+  const sortableFiltered = useMemo<SortableEmployee[]>(
+    () =>
+      employees
+        .filter((emp) => {
+          if (!statusFilter) return true;
+          if (statusFilter === "aktivan") return !emp.is_on_vacation && emp.status === "active";
+          if (statusFilter === "na_odmoru") return emp.is_on_vacation === true;
+          if (statusFilter === "neaktivan") return emp.status === "inactive";
+          return true;
+        })
+        .map((emp) => ({
+          ...emp,
+          salary_sort: parseFloat(emp.salary_type === "satnica" ? (emp.hourly_rate ?? "0") : (emp.fixed_salary ?? "0")) || 0,
+        })),
+    [employees, statusFilter]
+  );
+  const { items: sortedEmployees, requestSort, sortConfig } = useSortableData<SortableEmployee>(sortableFiltered);
 
   const openNew = () => { setEditEmployee(null); setFormOpen(true); };
   const openEdit = (emp: Employee) => { setEditEmployee(emp); setFormOpen(true); };
@@ -1549,23 +1569,26 @@ export default function ZaposleniPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ background: "#fafafa", borderBottom: "1px solid var(--border)" }}>
-                {["Ime i prezime", "Sektor", "Pozicija", "Plata", "Status", ""].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: "11px 16px",
-                      textAlign: "left",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "var(--muted)",
-                      letterSpacing: ".05em",
-                      textTransform: "uppercase",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
+                {([
+                  ["last_name",    "Ime i prezime"],
+                  ["sector",       "Sektor"],
+                  ["position",     "Pozicija"],
+                  ["salary_sort",  "Plata"],
+                  ["status",       "Status"],
+                ] as const).map(([key, label]) => {
+                  const isActive = sortConfig?.key === key;
+                  return (
+                    <th key={key}
+                      style={{ padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "var(--muted)", letterSpacing: ".05em", textTransform: "uppercase", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}
+                      onClick={() => requestSort(key)}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        {label}
+                        <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
+                      </span>
+                    </th>
+                  );
+                })}
+                <th style={{ padding: "11px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "var(--muted)", letterSpacing: ".05em", textTransform: "uppercase", whiteSpace: "nowrap" }} />
               </tr>
             </thead>
             <tbody>
@@ -1579,18 +1602,18 @@ export default function ZaposleniPage() {
                     ))}
                   </tr>
                 ))
-              ) : filteredEmployees.length === 0 ? (
+              ) : sortedEmployees.length === 0 ? (
                 <tr>
                   <td colSpan={6} style={{ padding: "48px 16px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
                     {search || sectorFilter || statusFilter ? "Nema rezultata za zadatu pretragu." : "Još nema zaposlenih. Dodajte prvog zaposlenog."}
                   </td>
                 </tr>
               ) : (
-                filteredEmployees.map((emp, idx) => (
+                sortedEmployees.map((emp, idx) => (
                   <tr
                     key={emp.id}
                     style={{
-                      borderBottom: idx < filteredEmployees.length - 1 ? "1px solid var(--border-soft)" : "none",
+                      borderBottom: idx < sortedEmployees.length - 1 ? "1px solid var(--border-soft)" : "none",
                       transition: "background .1s",
                     }}
                     onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafbff"; }}
@@ -1642,10 +1665,10 @@ export default function ZaposleniPage() {
           </table>
         </div>
 
-        {!isLoading && filteredEmployees.length > 0 && (
+        {!isLoading && sortableFiltered.length > 0 && (
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
-            {filteredEmployees.length} {filteredEmployees.length === 1 ? "zaposleni" : "zaposlenih"}
-            {(statusFilter || sectorFilter) && filteredEmployees.length !== employees.length
+            {sortableFiltered.length} {sortableFiltered.length === 1 ? "zaposleni" : "zaposlenih"}
+            {(statusFilter || sectorFilter) && sortableFiltered.length !== employees.length
               ? ` (filtrirano od ${employees.length})`
               : ""}
           </div>

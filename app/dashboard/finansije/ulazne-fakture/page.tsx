@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import DatePicker from "@/components/ui/DatePicker";
@@ -14,6 +14,8 @@ import type {
 import {
   EMPTY_SUPPLIER_FORM, EMPTY_INVOICE_FORM, EMPTY_ITEM, invoiceToForm,
 } from "@/types/supplier";
+import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const INVOICES_BASE = `/api/${TENANT}/finansije/incoming-invoices`;
@@ -28,6 +30,8 @@ interface PaginatedInvoices {
   from: number | null;
   to: number | null;
 }
+
+type SortableInvoice = IncomingInvoice & { supplier_name: string };
 
 const STATUS_OPTIONS = [
   { value: "",          label: "Sve fakture" },
@@ -1089,6 +1093,20 @@ function SupplierSlideOver({ supplierName, invoices, onClose }: SupplierSlideOve
   );
 }
 
+// ─── Sort indicator ──────────────────────────────────────────────────────────
+
+function SortIndicator({ isActive, direction }: {
+  isActive: boolean;
+  direction: "asc" | "desc" | null;
+}) {
+  if (!isActive) {
+    return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  }
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function UlazneFakturePage() {
@@ -1126,6 +1144,11 @@ export default function UlazneFakturePage() {
     staleTime: 30_000,
   });
   const invoices = paginatedData?.data ?? [];
+  const sortableInvoices = useMemo<SortableInvoice[]>(
+    () => invoices.map((inv) => ({ ...inv, supplier_name: inv.supplier?.name ?? "" })),
+    [invoices]
+  );
+  const { items: sortedInvoices, requestSort, sortConfig } = useSortableData<SortableInvoice>(sortableInvoices);
   const total    = paginatedData?.total ?? 0;
   const lastPage = paginatedData?.last_page ?? 1;
   const from     = paginatedData?.from ?? 0;
@@ -1233,17 +1256,47 @@ export default function UlazneFakturePage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Broj fakture</th>
-                    <th style={thStyle}>Dobavljač</th>
-                    <th style={thStyle}>Datum izdavanja</th>
-                    <th style={thStyle}>Valuta</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Ukupan iznos</th>
-                    <th style={{ ...thStyle, textAlign: "center" }}>Status</th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("invoice_number")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Broj fakture
+                        <SortIndicator isActive={sortConfig?.key === "invoice_number"} direction={sortConfig && sortConfig.key === "invoice_number" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("supplier_name")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Dobavljač
+                        <SortIndicator isActive={sortConfig?.key === "supplier_name"} direction={sortConfig && sortConfig.key === "supplier_name" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("issue_date")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Datum izdavanja
+                        <SortIndicator isActive={sortConfig?.key === "issue_date"} direction={sortConfig && sortConfig.key === "issue_date" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("due_date")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Valuta
+                        <SortIndicator isActive={sortConfig?.key === "due_date"} direction={sortConfig && sortConfig.key === "due_date" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("total_amount")}>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+                        Ukupan iznos
+                        <SortIndicator isActive={sortConfig?.key === "total_amount"} direction={sortConfig && sortConfig.key === "total_amount" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, textAlign: "center", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("status")}>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                        Status
+                        <SortIndicator isActive={sortConfig?.key === "status"} direction={sortConfig && sortConfig.key === "status" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
                     <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((inv) => (
+                  {sortedInvoices.map((inv) => (
                     <tr key={inv.id} style={{ transition: "background .1s" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafafa"; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}

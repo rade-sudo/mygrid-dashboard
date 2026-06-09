@@ -7,6 +7,8 @@ import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type { Client, ClientFormData } from "@/types/client";
 import { EMPTY_CLIENT_FORM } from "@/types/client";
+import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const BASE = `/api/${TENANT}/finansije/clients`;
@@ -182,6 +184,13 @@ function ClientSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) {
   );
 }
 
+function SortIndicator({ isActive, direction }: { isActive: boolean; direction: "asc" | "desc" | null }) {
+  if (!isActive) return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
+}
+
 interface PaginatedClients {
   data: Client[]; current_page: number; last_page: number; total: number; per_page: number;
 }
@@ -220,6 +229,8 @@ export default function KlijentiPage() {
       setToast("Klijent je obrisan.");
     },
   });
+
+  const { items: sortedClients, requestSort, sortConfig } = useSortableData<Client>(clients);
 
   const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--border-soft)", whiteSpace: "nowrap" };
   const tdStyle: React.CSSProperties = { padding: "13px 16px", fontSize: 14, color: "#111418", borderBottom: "1px solid var(--border-soft)", verticalAlign: "middle" };
@@ -270,16 +281,28 @@ export default function KlijentiPage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Naziv firme</th>
-                    <th style={thStyle}>PIB</th>
-                    <th style={thStyle}>Žiro račun</th>
-                    <th style={thStyle}>Email</th>
-                    <th style={thStyle}>Telefon</th>
+                    {([
+                      ["name",       "Naziv firme"],
+                      ["pib",        "PIB"],
+                      ["ziro_racun", "Žiro račun"],
+                      ["email",      "Email"],
+                      ["phone",      "Telefon"],
+                    ] as const).map(([key, label]) => {
+                      const isActive = sortConfig?.key === key;
+                      return (
+                        <th key={key} style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            {label}
+                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
+                          </span>
+                        </th>
+                      );
+                    })}
                     <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {clients.map((c) => (
+                  {sortedClients.map((c) => (
                     <tr key={c.id}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafafa"; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}

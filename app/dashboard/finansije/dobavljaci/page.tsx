@@ -7,6 +7,8 @@ import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type { Supplier, SupplierFormData } from "@/types/supplier";
 import { EMPTY_SUPPLIER_FORM } from "@/types/supplier";
+import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const BASE = `/api/${TENANT}/finansije/suppliers`;
@@ -217,6 +219,13 @@ function SupplierSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
   );
 }
 
+function SortIndicator({ isActive, direction }: { isActive: boolean; direction: "asc" | "desc" | null }) {
+  if (!isActive) return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DobavljaciPage() {
@@ -248,6 +257,8 @@ export default function DobavljaciPage() {
       setToast("Dobavljač je obrisan.");
     },
   });
+
+  const { items: sortedSuppliers, requestSort, sortConfig } = useSortableData<Supplier>(suppliers);
 
   const thStyle: React.CSSProperties = {
     padding: "10px 16px", textAlign: "left",
@@ -310,16 +321,28 @@ export default function DobavljaciPage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Naziv firme</th>
-                    <th style={thStyle}>PIB</th>
-                    <th style={thStyle}>Matični broj</th>
-                    <th style={thStyle}>Adresa</th>
-                    <th style={thStyle}>Telefon</th>
+                    {([
+                      ["name",         "Naziv firme"],
+                      ["pib",          "PIB"],
+                      ["maticni_broj", "Matični broj"],
+                      ["address",      "Adresa"],
+                      ["phone",        "Telefon"],
+                    ] as const).map(([key, label]) => {
+                      const isActive = sortConfig?.key === key;
+                      return (
+                        <th key={key} style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            {label}
+                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
+                          </span>
+                        </th>
+                      );
+                    })}
                     <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {suppliers.map((s) => (
+                  {sortedSuppliers.map((s) => (
                     <tr key={s.id} style={{ transition: "background .1s" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafafa"; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}

@@ -9,6 +9,8 @@ import type { Contract, ContractFormData } from "@/types/contract";
 import { CONTRACT_TYPES, EMPTY_CONTRACT_FORM } from "@/types/contract";
 import DatePicker from "@/components/ui/DatePicker";
 import FormDropdown from "@/components/ui/FormDropdown";
+import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const BASE = `/api/${TENANT}/contracts`;
@@ -381,6 +383,15 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
   );
 }
 
+// ─── Sort indicator ──────────────────────────────────────────────────────────
+
+function SortIndicator({ isActive, direction }: { isActive: boolean; direction: "asc" | "desc" | null }) {
+  if (!isActive) return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--violet)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--violet)", flexShrink: 0 }} />;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function UgoвориPage() {
@@ -402,6 +413,8 @@ export default function UgoвориPage() {
       setDeleteTarget(null);
     },
   });
+
+  const { items: sortedContracts, requestSort, sortConfig } = useSortableData<Contract>(contracts);
 
   function openAdd() {
     setEditing(null);
@@ -488,17 +501,44 @@ export default function UgoвориPage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Datum</th>
-                    <th style={thStyle}>Datum isteka</th>
-                    <th style={thStyle}>Tip ugovora</th>
-                    <th style={thStyle}>Ugovorna strana</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Vrijednost</th>
+                    {([
+                      ["contract_date",    "Datum"],
+                      ["contract_end_date","Datum isteka"],
+                      ["contract_type",    "Tip ugovora"],
+                      ["contracting_party","Ugovorna strana"],
+                    ] as const).map(([key, label]) => (
+                      <th
+                        key={key}
+                        onClick={() => requestSort(key)}
+                        style={{ ...thStyle, cursor: "pointer", userSelect: "none" }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          {label}
+                          <SortIndicator
+                            isActive={sortConfig?.key === key}
+                            direction={sortConfig?.key === key ? sortConfig.direction : null}
+                          />
+                        </span>
+                      </th>
+                    ))}
+                    <th
+                      onClick={() => requestSort("value")}
+                      style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>
+                        Vrijednost
+                        <SortIndicator
+                          isActive={sortConfig?.key === "value"}
+                          direction={sortConfig?.key === "value" ? sortConfig.direction : null}
+                        />
+                      </span>
+                    </th>
                     <th style={thStyle}>Napomena</th>
                     <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {contracts.map((c) => (
+                  {sortedContracts.map((c) => (
                     <tr
                       key={c.id}
                       style={{ transition: "background .1s" }}
@@ -516,18 +556,21 @@ export default function UgoвориPage() {
                             const daysLeft = Math.ceil(
                               (new Date(c.contract_end_date).getTime() - Date.now()) / 86_400_000
                             );
-                            const expiring = daysLeft >= 0 && daysLeft <= 30;
+                            const expired  = daysLeft < 0;
+                            const expiring = !expired && daysLeft <= 30;
+                            const color = expired ? "var(--red)" : expiring ? "#d97706" : "#111418";
+                            const dotColor = expired ? "var(--red)" : "#d97706";
                             return (
                               <span style={{
                                 display: "inline-flex", alignItems: "center", gap: 5,
                                 fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
-                                color: expiring ? "#d97706" : "#111418",
-                                fontWeight: expiring ? 600 : 400,
+                                color,
+                                fontWeight: expired || expiring ? 600 : 400,
                               }}>
-                                {expiring && (
+                                {(expired || expiring) && (
                                   <span style={{
                                     display: "inline-block", width: 7, height: 7,
-                                    borderRadius: "50%", background: "#d97706", flexShrink: 0,
+                                    borderRadius: "50%", background: dotColor, flexShrink: 0,
                                   }} />
                                 )}
                                 {formatDate(c.contract_end_date)}

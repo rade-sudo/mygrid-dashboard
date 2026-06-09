@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import DatePicker from "@/components/ui/DatePicker";
@@ -10,6 +10,8 @@ import api from "@/lib/axios";
 import type { Client } from "@/types/client";
 import type { OutboundInvoice, OutboundInvoiceFormData } from "@/types/client";
 import { EMPTY_OUTBOUND_ITEM, EMPTY_OUTBOUND_INVOICE_FORM, outboundInvoiceToForm } from "@/types/client";
+import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const INVOICES_DOC_BASE = `/api/${process.env.NEXT_PUBLIC_TENANT_ID ?? "grid"}/finansije/outbound-invoices`;
 
@@ -38,6 +40,8 @@ const STATUS_MAP: Record<OutboundInvoice["status"], { label: string; bg: string;
 };
 
 const MERA_OPTIONS = ["kom", "m²", "m³", "m¹", "m", "kg", "t", "l", "sat", "dan", "mes", "%", "paušal"];
+
+type SortableOutboundInvoice = OutboundInvoice & { client_name: string };
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -807,6 +811,13 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
   );
 }
 
+function SortIndicator({ isActive, direction }: { isActive: boolean; direction: "asc" | "desc" | null }) {
+  if (!isActive) return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function IzlazneFakturePage() {
@@ -837,6 +848,12 @@ export default function IzlazneFakturePage() {
 
   const invoices = paginatedData?.data ?? [];
   const total    = paginatedData?.total ?? 0;
+
+  const sortableInvoices = useMemo<SortableOutboundInvoice[]>(
+    () => invoices.map((inv) => ({ ...inv, client_name: inv.client?.name ?? "" })),
+    [invoices]
+  );
+  const { items: sortedInvoices, requestSort, sortConfig } = useSortableData<SortableOutboundInvoice>(sortableInvoices);
   const lastPage = paginatedData?.last_page ?? 1;
 
   const deleteMut = useMutation({
@@ -901,17 +918,45 @@ export default function IzlazneFakturePage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Broj fakture</th>
-                    <th style={thStyle}>Klijent</th>
-                    <th style={thStyle}>Datum izdavanja</th>
-                    <th style={thStyle}>Rok plaćanja</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Ukupan iznos</th>
-                    <th style={{ ...thStyle, textAlign: "center" }}>Status</th>
+                    {(["invoice_number", "client_name", "issue_date", "due_date"] as const).map((key) => {
+                      const labels: Record<string, string> = { invoice_number: "Broj fakture", client_name: "Klijent", issue_date: "Datum izdavanja", due_date: "Rok plaćanja" };
+                      const isActive = sortConfig?.key === key;
+                      return (
+                        <th key={key} style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            {labels[key]}
+                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
+                          </span>
+                        </th>
+                      );
+                    })}
+                    {(["total_amount"] as const).map((key) => {
+                      const isActive = sortConfig?.key === key;
+                      return (
+                        <th key={key} style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
+                          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>
+                            Ukupan iznos
+                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
+                          </span>
+                        </th>
+                      );
+                    })}
+                    {(["status"] as const).map((key) => {
+                      const isActive = sortConfig?.key === key;
+                      return (
+                        <th key={key} style={{ ...thStyle, textAlign: "center", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
+                          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                            Status
+                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
+                          </span>
+                        </th>
+                      );
+                    })}
                     <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((inv) => (
+                  {sortedInvoices.map((inv) => (
                     <tr key={inv.id}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafafa"; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}

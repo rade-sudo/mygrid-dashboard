@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import PageShell from "@/components/layout/PageShell";
@@ -10,6 +10,8 @@ import type { Vacation, VacationFormData } from "@/types/vacation";
 import { VACATION_TYPES, EMPTY_VACATION_FORM } from "@/types/vacation";
 import FormDropdown from "@/components/ui/FormDropdown";
 import DatePicker from "@/components/ui/DatePicker";
+import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 const BASE = `/api/${TENANT}/vacations`;
@@ -697,6 +699,17 @@ function VacationSlideOver({ open, editing, onClose }: SlideOverProps) {
   );
 }
 
+// ─── Sort indicator ──────────────────────────────────────────────────────────
+
+type SortableVacation = Vacation & { employee_name: string; employee_sector: string };
+
+function SortIndicator({ isActive, direction }: { isActive: boolean; direction: "asc" | "desc" | null }) {
+  if (!isActive) return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--violet)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--violet)", flexShrink: 0 }} />;
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GodišnjiOdmoriPage() {
@@ -719,6 +732,16 @@ export default function GodišnjiOdmoriPage() {
       setDeleteTarget(null);
     },
   });
+
+  const sortableVacations = useMemo<SortableVacation[]>(
+    () => vacations.map((v) => ({
+      ...v,
+      employee_name:   `${v.employee.last_name} ${v.employee.first_name}`,
+      employee_sector: v.employee.sector,
+    })),
+    [vacations]
+  );
+  const { items: sortedVacations, requestSort, sortConfig } = useSortableData<SortableVacation>(sortableVacations);
 
   function openAdd() {
     setEditing(null);
@@ -799,17 +822,33 @@ export default function GodišnjiOdmoriPage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Zaposleni</th>
-                    <th style={thStyle}>Sektor</th>
-                    <th style={thStyle}>Tip odsustva</th>
-                    <th style={thStyle}>Od datuma</th>
-                    <th style={thStyle}>Do datuma</th>
+                    {([
+                      ["employee_name",   "Zaposleni"],
+                      ["employee_sector", "Sektor"],
+                      ["type",            "Tip odsustva"],
+                      ["start_date",      "Od datuma"],
+                      ["end_date",        "Do datuma"],
+                    ] as const).map(([key, label]) => (
+                      <th
+                        key={key}
+                        onClick={() => requestSort(key)}
+                        style={{ ...thStyle, cursor: "pointer", userSelect: "none" }}
+                      >
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          {label}
+                          <SortIndicator
+                            isActive={sortConfig?.key === key}
+                            direction={sortConfig?.key === key ? sortConfig.direction : null}
+                          />
+                        </span>
+                      </th>
+                    ))}
                     <th style={thStyle}>Napomena</th>
                     <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {vacations.map((v) => {
+                  {sortedVacations.map((v) => {
                     const active = isActiveNow(v.start_date, v.end_date);
                     const typeColor = TYPE_COLORS[v.type] ?? TYPE_COLORS.ostalo;
                     return (

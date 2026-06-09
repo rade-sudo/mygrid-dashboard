@@ -9,6 +9,8 @@ import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type { Bank, BankTransaction, TransactionFormData } from "@/types/bank";
 import { EMPTY_TRANSACTION_FORM } from "@/types/bank";
+import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
+import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 
@@ -83,6 +85,20 @@ const tdStyle: React.CSSProperties = {
   borderBottom: "1px solid var(--border-soft)",
   verticalAlign: "middle",
 };
+
+// ─── Sort indicator ──────────────────────────────────────────────────────────
+
+function SortIndicator({ isActive, direction }: {
+  isActive: boolean;
+  direction: "asc" | "desc" | null;
+}) {
+  if (!isActive) {
+    return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
+  }
+  return direction === "asc"
+    ? <IconSortAsc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />
+    : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
+}
 
 // ─── Delete confirm ───────────────────────────────────────────────────────────
 
@@ -353,6 +369,8 @@ export default function BankDetailPage({ params }: { params: Promise<{ id: strin
     },
   });
 
+  const { items: sortedTransactions, requestSort, sortConfig } = useSortableData<BankTransaction>(transactions);
+
   function openAdd() { setEditing(null); setSlideOpen(true); }
   function openEdit(t: BankTransaction) { setEditing(t); setSlideOpen(true); }
 
@@ -410,16 +428,41 @@ export default function BankDetailPage({ params }: { params: Promise<{ id: strin
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead style={{ background: "#fafafa" }}>
                   <tr>
-                    <th style={thStyle}>Datum</th>
-                    <th style={thStyle}>Tip</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Iznos</th>
-                    <th style={thStyle}>Opis</th>
-                    <th style={thStyle}>Referenca</th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("date")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Datum
+                        <SortIndicator isActive={sortConfig?.key === "date"} direction={sortConfig && sortConfig.key === "date" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("type")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Tip
+                        <SortIndicator isActive={sortConfig?.key === "type"} direction={sortConfig && sortConfig.key === "type" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("amount")}>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+                        Iznos
+                        <SortIndicator isActive={sortConfig?.key === "amount"} direction={sortConfig && sortConfig.key === "amount" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("description")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Opis
+                        <SortIndicator isActive={sortConfig?.key === "description"} direction={sortConfig && sortConfig.key === "description" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
+                    <th style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort("reference")}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        Referenca
+                        <SortIndicator isActive={sortConfig?.key === "reference"} direction={sortConfig && sortConfig.key === "reference" ? sortConfig.direction : null} />
+                      </span>
+                    </th>
                     <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map((t) => {
+                  {sortedTransactions.map((t) => {
                     const isPriliv = t.type === "priliv";
                     return (
                       <tr key={t.id} style={{ transition: "background .1s" }}
