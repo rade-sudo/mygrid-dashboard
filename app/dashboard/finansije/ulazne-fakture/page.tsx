@@ -2,7 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { useForm, useFieldArray, Controller, useWatch, type Control, type UseFormRegister, type UseFormSetValue } from "react-hook-form";
 import DatePicker from "@/components/ui/DatePicker";
 import FilterDropdown from "@/components/ui/FilterDropdown";
 import PageShell from "@/components/layout/PageShell";
@@ -18,8 +18,9 @@ import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
 import { useSortableData } from "@/hooks/useSortableData";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
-const INVOICES_BASE = `/api/${TENANT}/finansije/incoming-invoices`;
-const SUPPLIERS_BASE = `/api/${TENANT}/finansije/suppliers`;
+const INVOICES_BASE   = `/api/${TENANT}/finansije/incoming-invoices`;
+const SUPPLIERS_BASE  = `/api/${TENANT}/finansije/suppliers`;
+const SIFRARNICI_BASE = `/api/${TENANT}/sifrarnici`;
 
 interface PaginatedInvoices {
   data: IncomingInvoice[];
@@ -134,6 +135,331 @@ const compactInput: React.CSSProperties = {
 };
 
 const MERA_OPTIONS = ["kom", "m²", "m³", "m¹", "m", "kg", "t", "l", "sat", "dan", "mes", "%", "paušal"];
+
+// ─── Dict types ───────────────────────────────────────────────────────────────
+
+interface DictOption {
+  id: number;
+  name: string;
+  sector_id?: number | null;
+  sector?: { id: number; name: string } | null;
+  organizational_unit_id?: number | null;
+  organizational_unit?: { id: number; name: string; sector?: { id: number; name: string } | null } | null;
+}
+
+// ─── Dict combobox ────────────────────────────────────────────────────────────
+
+interface DictComboboxProps {
+  selectedId: number | null;
+  options: DictOption[];
+  placeholder: string;
+  disabled?: boolean;
+  createEndpoint?: string;
+  createPayload?: (name: string) => Record<string, unknown>;
+  queryKeyToInvalidate?: unknown[];
+  onSelect: (item: DictOption | null) => void;
+}
+
+function DictCombobox({
+  selectedId, options, placeholder, disabled, createEndpoint, createPayload, queryKeyToInvalidate, onSelect,
+}: DictComboboxProps) {
+  const qc = useQueryClient();
+  const [query, setQuery]           = useState("");
+  const [open, setOpen]             = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const wrapRef  = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropRef  = useRef<HTMLDivElement>(null);
+  const [dropStyle, setDropStyle] = useState<React.CSSProperties>({
+    position: "fixed", top: -9999, left: -9999, zIndex: 9000,
+  });
+
+  const selectedItem = options.find((o) => o.id === selectedId) ?? null;
+
+  const filtered = useMemo(() => {
+    if (query.trim() === "") return options;
+    const q = query.toLowerCase().trim();
+    return options.filter((o) => o.name.toLowerCase().includes(q));
+  }, [options, query]);
+
+  const showCreate =
+    !disabled &&
+    createEndpoint != null &&
+    query.trim().length >= 1 &&
+    !options.some((o) => o.name.toLowerCase() === query.trim().toLowerCase());
+
+  useLayoutEffect(() => {
+    if (open && inputRef.current) {
+      const r = inputRef.current.getBoundingClientRect();
+      setDropStyle({
+        position: "fixed",
+        top: r.bottom + 4,
+        left: r.left,
+        width: Math.max(r.width, 210),
+        zIndex: 9000,
+      });
+    }
+  }, [open]);
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      const t = e.target as Node;
+      const outsideWrap = wrapRef.current && !wrapRef.current.contains(t);
+      const outsideDrop = !dropRef.current || !dropRef.current.contains(t);
+      if (outsideWrap && outsideDrop) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  async function handleCreate() {
+    if (!createEndpoint || !createPayload) return;
+    setIsCreating(true);
+    try {
+      const res = await api.post<DictOption>(createEndpoint, createPayload(query.trim()));
+      const newItem = res.data;
+      if (queryKeyToInvalidate) qc.invalidateQueries({ queryKey: queryKeyToInvalidate });
+      onSelect(newItem);
+      setOpen(false);
+      setQuery("");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  const accentBorder = open ? "var(--green)" : selectedId ? "rgba(22,163,74,.35)" : "var(--border)";
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <div style={{ position: "relative" }}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={open ? query : (selectedItem?.name ?? "")}
+          disabled={disabled}
+          placeholder={disabled ? "—" : placeholder}
+          onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => { if (!disabled) { setQuery(""); setOpen(true); } }}
+          autoComplete="off"
+          style={{
+            ...compactInput,
+            borderColor: disabled ? "var(--border-soft)" : accentBorder,
+            background: disabled ? "#f9fafb" : "#fff",
+            color: disabled ? "var(--muted-2)" : "#111418",
+            cursor: disabled ? "not-allowed" : "text",
+            paddingRight: selectedId && !disabled ? 22 : 8,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        />
+        {selectedId != null && !disabled && !open && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => { onSelect(null); setQuery(""); }}
+            style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, border: "none", background: "#e5e7eb", color: "#6b7280", cursor: "pointer", borderRadius: "50%", fontSize: 11, display: "grid", placeItems: "center", lineHeight: 1, flexShrink: 0 }}
+          >×</button>
+        )}
+      </div>
+
+      {open && (
+        <div ref={dropRef} style={{ ...dropStyle, background: "#fff", border: "1.5px solid rgba(22,163,74,.4)", borderRadius: 10, boxShadow: "0 8px 28px rgba(16,24,40,.15)", maxHeight: 240, overflowY: "auto" }}>
+          {filtered.length === 0 && !showCreate && (
+            <div style={{ padding: "9px 12px", fontSize: 12.5, color: "var(--muted)" }}>
+              {query.length === 0 ? "Nema opcija" : `Nema rezultata za "${query}"`}
+            </div>
+          )}
+          {filtered.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onSelect(opt); setOpen(false); setQuery(""); }}
+              style={{
+                display: "block", width: "100%", textAlign: "left", padding: "7px 12px",
+                background: opt.id === selectedId ? "var(--green-soft)" : "transparent",
+                border: "none", borderBottom: "1px solid var(--border-soft)",
+                cursor: "pointer", fontFamily: "inherit", fontSize: 12.5,
+              }}
+              onMouseEnter={(e) => { if (opt.id !== selectedId) (e.currentTarget as HTMLButtonElement).style.background = "var(--green-soft)"; }}
+              onMouseLeave={(e) => { if (opt.id !== selectedId) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+            >
+              <div style={{ fontWeight: opt.id === selectedId ? 700 : 600, color: opt.id === selectedId ? "var(--green)" : "#111418", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {opt.name}
+              </div>
+              {opt.sector?.name && (
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>{opt.sector.name}</div>
+              )}
+              {opt.organizational_unit && (
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>
+                  {opt.organizational_unit.name}{opt.organizational_unit.sector?.name ? ` · ${opt.organizational_unit.sector.name}` : ""}
+                </div>
+              )}
+            </button>
+          ))}
+          {showCreate && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleCreate}
+              disabled={isCreating}
+              style={{
+                display: "flex", alignItems: "center", gap: 6, width: "100%",
+                padding: "8px 12px", background: "var(--green-soft)",
+                border: "none", borderTop: filtered.length > 0 ? "1px solid rgba(22,163,74,.15)" : "none",
+                cursor: isCreating ? "not-allowed" : "pointer", fontFamily: "inherit",
+                color: "var(--green)", fontSize: 12.5, fontWeight: 600,
+              }}
+              onMouseEnter={(e) => { if (!isCreating) (e.currentTarget as HTMLButtonElement).style.background = "#c6f0d8"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--green-soft)"; }}
+            >
+              {isCreating ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.22-8.56" /></svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+              )}
+              {isCreating ? "Kreiranje..." : `Dodaj "${query.trim()}"`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Invoice item row ─────────────────────────────────────────────────────────
+
+interface ItemRowProps {
+  index: number;
+  control: Control<InvoiceFormData>;
+  register: UseFormRegister<InvoiceFormData>;
+  setValue: UseFormSetValue<InvoiceFormData>;
+  removeItem: (index: number) => void;
+  isLast: boolean;
+  isEven: boolean;
+  sectors: DictOption[];
+  allUnits: DictOption[];
+  allCategories: DictOption[];
+}
+
+function ItemRow({
+  index, control, register, setValue, removeItem, isLast, isEven,
+  sectors, allUnits, allCategories,
+}: ItemRowProps) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sectorId   = useWatch({ control, name: `items.${index}.sector_id` as any }) as number | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const unitId     = useWatch({ control, name: `items.${index}.organizational_unit_id` as any }) as number | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const categoryId = useWatch({ control, name: `items.${index}.expense_category_id` as any }) as number | null;
+
+  const filteredUnits = useMemo(
+    () => sectorId != null ? allUnits.filter((u) => u.sector_id === sectorId) : [],
+    [allUnits, sectorId]
+  );
+  const filteredCategories = useMemo(
+    () => unitId != null ? allCategories.filter((c) => c.organizational_unit_id === unitId) : [],
+    [allCategories, unitId]
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sv = setValue as (name: string, value: unknown) => void;
+
+  function handleSectorSelect(opt: DictOption | null) {
+    sv(`items.${index}.sector_id`, opt?.id ?? null);
+    sv(`items.${index}.sektor`, opt?.name ?? "");
+    sv(`items.${index}.organizational_unit_id`, null);
+    sv(`items.${index}.jedinica`, "");
+    sv(`items.${index}.expense_category_id`, null);
+    sv(`items.${index}.kategorija`, "");
+  }
+  function handleUnitSelect(opt: DictOption | null) {
+    sv(`items.${index}.organizational_unit_id`, opt?.id ?? null);
+    sv(`items.${index}.jedinica`, opt?.name ?? "");
+    sv(`items.${index}.expense_category_id`, null);
+    sv(`items.${index}.kategorija`, "");
+  }
+  function handleCategorySelect(opt: DictOption | null) {
+    sv(`items.${index}.expense_category_id`, opt?.id ?? null);
+    sv(`items.${index}.kategorija`, opt?.name ?? "");
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "88px 76px 1fr 58px 82px 92px 30px",
+        gap: 6,
+        padding: "7px 10px",
+        alignItems: "center",
+        borderBottom: !isLast ? "1px solid var(--border-soft)" : "none",
+        background: isEven ? "#fff" : "#fafafa",
+      }}
+    >
+      <DictCombobox
+        selectedId={sectorId}
+        options={sectors}
+        placeholder="Sektor"
+        createEndpoint={`${SIFRARNICI_BASE}/sektori`}
+        createPayload={(name) => ({ name })}
+        queryKeyToInvalidate={["dict-sektori", TENANT]}
+        onSelect={handleSectorSelect}
+      />
+      <DictCombobox
+        selectedId={unitId}
+        options={filteredUnits}
+        placeholder="Jed."
+        disabled={sectorId == null}
+        createEndpoint={sectorId != null ? `${SIFRARNICI_BASE}/jedinice` : undefined}
+        createPayload={(name) => ({ name, sector_id: sectorId })}
+        queryKeyToInvalidate={["dict-jedinice", TENANT]}
+        onSelect={handleUnitSelect}
+      />
+      <DictCombobox
+        selectedId={categoryId}
+        options={filteredCategories}
+        placeholder="Kategorija / opis..."
+        disabled={unitId == null}
+        createEndpoint={unitId != null ? `${SIFRARNICI_BASE}/kategorije` : undefined}
+        createPayload={(name) => ({ name, organizational_unit_id: unitId })}
+        queryKeyToInvalidate={["dict-kategorije", TENANT]}
+        onSelect={handleCategorySelect}
+      />
+      <input
+        type="number" step="0.001" min="0" placeholder="1"
+        {...register(`items.${index}.kolicina`)}
+        style={{ ...compactInput, textAlign: "right", fontFamily: "var(--font-geist-mono), monospace" }}
+        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+      />
+      <Controller
+        name={`items.${index}.mera`}
+        control={control}
+        render={({ field: f }) => (
+          <select value={f.value} onChange={(e) => f.onChange(e.target.value)} style={{ ...compactInput, cursor: "pointer" }}>
+            {MERA_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        )}
+      />
+      <input
+        type="number" step="0.01" min="0" placeholder="0.00"
+        {...register(`items.${index}.iznos`)}
+        style={{ ...compactInput, textAlign: "right", fontFamily: "var(--font-geist-mono), monospace" }}
+        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+      />
+      <button
+        type="button"
+        onClick={() => removeItem(index)}
+        style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #fecaca", background: "#fef2f2", color: "var(--red)", cursor: "pointer", display: "grid", placeItems: "center", fontSize: 15, flexShrink: 0 }}
+      >×</button>
+    </div>
+  );
+}
 
 // ─── Quick-add supplier modal ─────────────────────────────────────────────────
 
@@ -390,6 +716,25 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
   const { fields: itemFields, append: appendItem, remove: removeItem } =
     useFieldArray({ control, name: "items" });
 
+  const { data: dictSectors    = [] } = useQuery<DictOption[]>({
+    queryKey: ["dict-sektori", TENANT],
+    queryFn: () => api.get(`${SIFRARNICI_BASE}/sektori`).then((r) => r.data as DictOption[]),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const { data: dictUnits      = [] } = useQuery<DictOption[]>({
+    queryKey: ["dict-jedinice", TENANT],
+    queryFn: () => api.get(`${SIFRARNICI_BASE}/jedinice`).then((r) => r.data as DictOption[]),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const { data: dictCategories = [] } = useQuery<DictOption[]>({
+    queryKey: ["dict-kategorije", TENANT],
+    queryFn: () => api.get(`${SIFRARNICI_BASE}/kategorije`).then((r) => r.data as DictOption[]),
+    enabled: open,
+    staleTime: 60_000,
+  });
+
   const totalStr        = watch("total_amount");
   const amtStr          = watch("amount_without_vat");
   const vatStr          = watch("vat_amount");
@@ -474,9 +819,12 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
       data.items
         .filter(item => item.iznos !== "" && parseFloat(item.iznos) > 0)
         .forEach((item, i) => {
-          fd.append(`items[${i}][sektor]`, item.sektor);
-          fd.append(`items[${i}][jedinica]`, item.jedinica);
-          fd.append(`items[${i}][kategorija]`, item.kategorija);
+          if (item.sektor)    fd.append(`items[${i}][sektor]`, item.sektor);
+          if (item.jedinica)  fd.append(`items[${i}][jedinica]`, item.jedinica);
+          if (item.kategorija) fd.append(`items[${i}][kategorija]`, item.kategorija);
+          if (item.sector_id != null)               fd.append(`items[${i}][sector_id]`, String(item.sector_id));
+          if (item.organizational_unit_id != null)  fd.append(`items[${i}][organizational_unit_id]`, String(item.organizational_unit_id));
+          if (item.expense_category_id != null)     fd.append(`items[${i}][expense_category_id]`, String(item.expense_category_id));
           fd.append(`items[${i}][kolicina]`, item.kolicina || "1");
           fd.append(`items[${i}][mera]`, item.mera);
           fd.append(`items[${i}][iznos]`, item.iznos);
@@ -510,7 +858,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
 
   return (
     <>
-      <style>{`@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
+      <style>{`@keyframes slideInRight{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       <div
         onClick={() => { if (!quickAddOpen) onClose(); }}
@@ -638,90 +986,19 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
 
                   {/* Item rows */}
                   {itemFields.map((field, index) => (
-                    <div
+                    <ItemRow
                       key={field.id}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "88px 76px 1fr 58px 82px 92px 30px",
-                        gap: 6,
-                        padding: "7px 10px",
-                        alignItems: "center",
-                        borderBottom: index < itemFields.length - 1 ? "1px solid var(--border-soft)" : "none",
-                        background: index % 2 === 0 ? "#fff" : "#fafafa",
-                      }}
-                    >
-                      {/* SEKTOR */}
-                      <input
-                        type="text"
-                        placeholder="Sektor"
-                        {...register(`items.${index}.sektor`)}
-                        style={compactInput}
-                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-                      />
-                      {/* JEDINICA */}
-                      <input
-                        type="text"
-                        placeholder="Jedinica"
-                        {...register(`items.${index}.jedinica`)}
-                        style={compactInput}
-                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-                      />
-                      {/* KATEGORIJA */}
-                      <input
-                        type="text"
-                        placeholder="Kategorija / opis..."
-                        {...register(`items.${index}.kategorija`)}
-                        style={compactInput}
-                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-                      />
-                      {/* KOLIČINA */}
-                      <input
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        placeholder="1"
-                        {...register(`items.${index}.kolicina`)}
-                        style={{ ...compactInput, textAlign: "right", fontFamily: "var(--font-geist-mono), monospace" }}
-                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-                      />
-                      {/* MERA */}
-                      <Controller
-                        name={`items.${index}.mera`}
-                        control={control}
-                        render={({ field: f }) => (
-                          <select
-                            value={f.value}
-                            onChange={(e) => f.onChange(e.target.value)}
-                            style={{ ...compactInput, cursor: "pointer" }}
-                          >
-                            {MERA_OPTIONS.map((m) => (
-                              <option key={m} value={m}>{m}</option>
-                            ))}
-                          </select>
-                        )}
-                      />
-                      {/* IZNOS */}
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        {...register(`items.${index}.iznos`)}
-                        style={{ ...compactInput, textAlign: "right", fontFamily: "var(--font-geist-mono), monospace" }}
-                        onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-                        onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-                      />
-                      {/* X */}
-                      <button
-                        type="button"
-                        onClick={() => removeItem(index)}
-                        style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid #fecaca", background: "#fef2f2", color: "var(--red)", cursor: "pointer", display: "grid", placeItems: "center", fontSize: 15, flexShrink: 0 }}
-                      >×</button>
-                    </div>
+                      index={index}
+                      control={control}
+                      register={register}
+                      setValue={setValue}
+                      removeItem={removeItem}
+                      isLast={index === itemFields.length - 1}
+                      isEven={index % 2 === 0}
+                      sectors={dictSectors}
+                      allUnits={dictUnits}
+                      allCategories={dictCategories}
+                    />
                   ))}
                 </div>
               </div>

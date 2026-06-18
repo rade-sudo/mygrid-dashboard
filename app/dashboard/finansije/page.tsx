@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
-import { IconDollar, IconInvoice, IconCard, IconUsers, IconWallet, IconActivity, IconDoc } from "@/components/ui/icons";
+import { IconDollar, IconInvoice, IconCard, IconUsers, IconWallet, IconActivity, IconDoc, IconBell } from "@/components/ui/icons";
 import type { FinanceStats } from "@/types/bank";
+import DuePaymentsWidget from "./_components/DuePaymentsWidget";
+import UnpaidReceivablesWidget from "./_components/UnpaidReceivablesWidget";
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 
@@ -57,6 +59,14 @@ const MODULES = [
     description: "Obračun, evidencija fiksnih plata i ostvarenih radnih sati zaposlenih.",
     Icon: IconWallet,
     href: "/dashboard/finansije/plate",
+    available: true,
+  },
+  {
+    id: "podsetnici",
+    title: "Podsetnici za plaćanja",
+    description: "Evidencija rata, kredita i automatski podsjetnici za nadolazeće obaveze.",
+    Icon: IconBell,
+    href: "/dashboard/finansije/podsetnici",
     available: true,
   },
 ];
@@ -277,6 +287,12 @@ export default function FinansijePage() {
               );
             })()}
           </div>
+        </div>
+
+        {/* Vidžeti — 50/50 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <DuePaymentsWidget />
+          <UnpaidReceivablesWidget />
         </div>
 
         {/* Navigacione kartice */}

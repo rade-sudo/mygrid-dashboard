@@ -45,6 +45,9 @@ export interface InvoiceItem {
   sektor: string | null;
   jedinica: string | null;
   kategorija: string | null;
+  sector_id: number | null;
+  organizational_unit_id: number | null;
+  expense_category_id: number | null;
   kolicina: string;
   mera: string;
   iznos: string;
@@ -56,6 +59,9 @@ export interface InvoiceItemFormData {
   sektor: string;
   jedinica: string;
   kategorija: string;
+  sector_id: number | null;
+  organizational_unit_id: number | null;
+  expense_category_id: number | null;
   kolicina: string;
   mera: string;
   iznos: string;
@@ -100,6 +106,9 @@ export const EMPTY_ITEM: InvoiceItemFormData = {
   sektor: "",
   jedinica: "",
   kategorija: "",
+  sector_id: null,
+  organizational_unit_id: null,
+  expense_category_id: null,
   kolicina: "1",
   mera: "kom",
   iznos: "",
@@ -136,12 +145,15 @@ export function invoiceToForm(inv: IncomingInvoice): InvoiceFormData {
     })),
     items: (inv.items ?? []).length > 0
       ? inv.items.map(item => ({
-          sektor:     item.sektor ?? "",
-          jedinica:   item.jedinica ?? "",
-          kategorija: item.kategorija ?? "",
-          kolicina:   item.kolicina,
-          mera:       item.mera,
-          iznos:      item.iznos,
+          sektor:                  item.sektor ?? "",
+          jedinica:                item.jedinica ?? "",
+          kategorija:              item.kategorija ?? "",
+          sector_id:               item.sector_id ?? null,
+          organizational_unit_id:  item.organizational_unit_id ?? null,
+          expense_category_id:     item.expense_category_id ?? null,
+          kolicina:                item.kolicina,
+          mera:                    item.mera,
+          iznos:                   item.iznos,
         }))
       : [{ ...EMPTY_ITEM }],
   };

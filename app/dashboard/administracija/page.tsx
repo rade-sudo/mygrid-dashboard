@@ -7,6 +7,16 @@ import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import { IconUsers, IconDoc, IconCal, IconActivity } from "@/components/ui/icons";
 
+function IconSifrarnik({ w = 24, h = 24 }: { w?: number; h?: number }) {
+  return (
+    <svg width={w} height={h} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+      <rect x="9" y="3" width="6" height="4" rx="1" />
+      <path d="M9 12h6M9 16h4" />
+    </svg>
+  );
+}
+
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,6 +53,14 @@ const MODULES = [
     description: "Planiranje i evidencija godišnjih odmora, bolovanja i odsustva zaposlenih.",
     Icon: IconCal,
     href: "/dashboard/administracija/godisnji-odmori",
+    available: true,
+  },
+  {
+    id: "sifarnici",
+    title: "Šifarnici",
+    description: "Upravljanje sektorima, organizacionim jedinicama i kategorijama troškova faktura.",
+    Icon: IconSifrarnik,
+    href: "/dashboard/administracija/sifarnici",
     available: true,
   },
 ];
