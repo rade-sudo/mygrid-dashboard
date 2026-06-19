@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import DatePicker from "@/components/ui/DatePicker";
-import FilterDropdown from "@/components/ui/FilterDropdown";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import type { Client } from "@/types/client";
@@ -12,18 +11,61 @@ import type { OutboundInvoice, OutboundInvoiceFormData } from "@/types/client";
 import { EMPTY_OUTBOUND_ITEM, EMPTY_OUTBOUND_INVOICE_FORM, outboundInvoiceToForm } from "@/types/client";
 import { IconSortAsc, IconSortDesc, IconSort } from "@/components/ui/icons";
 import { useSortableData } from "@/hooks/useSortableData";
+import DocumentEntryWizard, { type WizardClient } from "@/app/dashboard/finansije/ulazne-fakture/DocumentEntryWizard";
 
 const INVOICES_DOC_BASE = `/api/${process.env.NEXT_PUBLIC_TENANT_ID ?? "grid"}/finansije/outbound-invoices`;
 
-const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
-const INVOICES_BASE = `/api/${TENANT}/finansije/outbound-invoices`;
-const CLIENTS_BASE  = `/api/${TENANT}/finansije/clients`;
+const TENANT         = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
+const INVOICES_BASE  = `/api/${TENANT}/finansije/outbound-invoices`;
+const CLIENTS_BASE   = `/api/${TENANT}/finansije/clients`;
+const CLIENTS_AR_URL = `/api/${TENANT}/finansije/klijenti/sa-potrazivanjima`;
+
+const YEAR_START = `${new Date().getFullYear()}-01-01`;
+const TODAY      = new Date().toISOString().split("T")[0];
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface ClientWithReceivables {
+  id: number;
+  name: string;
+  total_invoices_count: number;
+  total_received_count: number;
+  total_receivable_balance: number;
+}
 
 interface PaginatedInvoices {
   data: OutboundInvoice[];
   current_page: number; last_page: number;
   total: number; per_page: number;
   from: number | null; to: number | null;
+}
+
+interface ClientStatsData {
+  client: { id: number; name: string; pib: string | null } | null;
+  invoiced_period: { amount: number; count: number };
+  collected_period: { amount: number };
+  total_receivable: number;
+}
+
+interface PaginatedClientInvoices {
+  data: OutboundInvoice[];
+  current_page: number; last_page: number;
+  total: number; per_page: number;
+}
+
+interface ClientPaymentRow {
+  id: number;
+  outbound_invoice_id: number;
+  amount: string;
+  payment_date: string;
+  invoice_number: string | null;
+  client_name: string | null;
+}
+
+interface PaginatedClientPayments {
+  data: ClientPaymentRow[];
+  current_page: number; last_page: number;
+  total: number; per_page: number;
 }
 
 const STATUS_OPTIONS = [
@@ -43,6 +85,19 @@ const MERA_OPTIONS = ["kom", "m²", "m³", "m¹", "m", "kg", "t", "l", "sat", "d
 
 type SortableOutboundInvoice = OutboundInvoice & { client_name: string };
 
+type ClientInvoiceRow = {
+  id: number;
+  issue_date: string;
+  invoice_number: string;
+  amount_without_vat: number;
+  vat_amount: number;
+  total_amount: number;
+  status: OutboundInvoice["status"];
+  _raw: OutboundInvoice;
+};
+
+type ClientPaymentSortRow = ClientPaymentRow & { amount_num: number };
+
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("sr-Latn", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -54,6 +109,12 @@ function formatCurrency(val: string | number): string {
   return n.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " RSD";
 }
 
+function formatAmount(n: number): string {
+  return n.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ─── StatusBadge ─────────────────────────────────────────────────────────────
+
 function StatusBadge({ status }: { status: OutboundInvoice["status"] }) {
   const s = STATUS_MAP[status];
   return (
@@ -62,6 +123,8 @@ function StatusBadge({ status }: { status: OutboundInvoice["status"] }) {
     </span>
   );
 }
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
 
 function Toast({ message, onDone }: { message: string; onDone: () => void }) {
   useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, [onDone]);
@@ -72,6 +135,8 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
     </div>
   );
 }
+
+// ─── DeleteConfirm ────────────────────────────────────────────────────────────
 
 function DeleteConfirm({ number: num, onConfirm, onCancel }: { number: string; onConfirm: () => void; onCancel: () => void }) {
   return (
@@ -120,6 +185,7 @@ function QuickAddClientModal({ initialName, onClose, onSuccess }: QuickAddClient
     onSuccess: (c: Client) => {
       qc.invalidateQueries({ queryKey: ["clients-search", TENANT] });
       qc.invalidateQueries({ queryKey: ["clients", TENANT] });
+      qc.invalidateQueries({ queryKey: ["clients-receivables", TENANT] });
       onSuccess(c);
     },
   });
@@ -327,7 +393,7 @@ function ClientPanel({ clientName, invoices, onClose }: ClientPanelProps) {
             </div>
 
             <div style={{ padding: "16px", borderRadius: 14, border: `1px solid ${debtAmount > 0 ? "#fecaca" : "rgba(22,163,74,.18)"}`, background: debtAmount > 0 ? "#fef2f2" : "var(--green-soft)" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: debtAmount > 0 ? "var(--red)" : "var(--green)", opacity: 0.8, marginBottom: 6 }}>Trenutni dug</div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: debtAmount > 0 ? "var(--red)" : "var(--green)", opacity: 0.8, marginBottom: 6 }}>Potraživanje</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: debtAmount > 0 ? "var(--red)" : "var(--green)", fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                 {debtAmount.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RSD
               </div>
@@ -478,6 +544,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["outbound-invoices", TENANT] });
+      qc.invalidateQueries({ queryKey: ["clients-receivables", TENANT] });
       onSaved();
       onClose();
     },
@@ -503,7 +570,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
       <div onClick={() => { if (!quickAddOpen) onClose(); }} style={{ position: "fixed", inset: 0, background: "rgba(10,17,36,.42)", zIndex: 100, backdropFilter: "blur(2px)" }} />
       <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 620, background: "#fff", zIndex: 101, display: "flex", flexDirection: "column", boxShadow: "-8px 0 40px rgba(16,24,40,.14)", animation: "slideInRight .25s cubic-bezier(.32,.72,.27,1)" }}>
 
-        {/* Header */}
         <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--green-soft)", color: "var(--green)", display: "grid", placeItems: "center" }}>
@@ -519,11 +585,9 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
           <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 20 }}>×</button>
         </div>
 
-        {/* Form */}
         <form id="outbound-invoice-form" onSubmit={handleSubmit(onSubmit)}
           style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
 
-          {/* Klijent */}
           <div>
             <label style={labelStyle}>Klijent</label>
             <ClientCombobox
@@ -535,7 +599,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             {clientError && <p style={errStyle}>Klijent je obavezan</p>}
           </div>
 
-          {/* Broj fakture */}
           <div>
             <label style={labelStyle}>Broj fakture</label>
             <input type="text" placeholder="npr. 2024/001 ili IF-0042"
@@ -547,7 +610,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             {errors.invoice_number && <p style={errStyle}>{errors.invoice_number.message}</p>}
           </div>
 
-          {/* Datumi */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Datum izdavanja</label>
@@ -562,7 +624,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             </div>
           </div>
 
-          {/* ─── STAVKE ─── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--muted)" }}>Stavke fakture</span>
@@ -617,7 +678,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             </div>
           </div>
 
-          {/* ─── PDV + kalkulacija ─── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 16px", background: "#fafafa", borderRadius: 11, border: "1px solid var(--border-soft)" }}>
             <div>
               <div style={{ fontSize: 12.5, fontWeight: 600, color: "#374151", marginBottom: 8 }}>Stopa PDV-a</div>
@@ -645,13 +705,11 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             </div>
           </div>
 
-          {/* Ukupno */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--green-soft)", borderRadius: 11, border: "1px solid rgba(22,163,74,.2)" }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--green)", opacity: 0.85 }}>Ukupno sa PDV</span>
             <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 19, fontWeight: 700, color: "var(--green)", letterSpacing: "-0.01em" }}>{totalDisplay} RSD</span>
           </div>
 
-          {/* Gotovinsko plaćanje + uplata */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 16px", background: "#fafafa", borderRadius: 11, border: "1px solid var(--border-soft)" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }}>
               <input type="checkbox" {...register("is_cash")}
@@ -721,7 +779,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             )}
           </div>
 
-          {/* Opis */}
           <div>
             <label style={labelStyle}>Opis <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opciono)</span></label>
             <textarea rows={3} placeholder="Napomena uz fakturu..."
@@ -732,7 +789,6 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
             />
           </div>
 
-          {/* Dokument fakture */}
           <div>
             <label style={labelStyle}>
               Dokument fakture{" "}
@@ -744,7 +800,7 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" /></svg>
                 <span style={{ fontSize: 13, color: "var(--green)", fontWeight: 500, flex: 1 }}>Dokument već priložen</span>
                 <button type="button"
-                  onClick={() => api.get(`${INVOICES_DOC_BASE}/${editing.id}/document`, { responseType: "blob" }).then((r) => { const url = URL.createObjectURL(r.data); window.open(url, "_blank"); })}
+                  onClick={() => api.get(`${INVOICES_DOC_BASE}/${editing.id}/document`, { responseType: "blob" }).then((r) => { const url = URL.createObjectURL(r.data as Blob); window.open(url, "_blank"); })}
                   style={{ fontSize: 12, fontWeight: 600, color: "var(--green)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, textDecoration: "underline" }}>
                   Otvori
                 </button>
@@ -811,6 +867,171 @@ function InvoiceSlideOver({ open, editing, onClose, onSaved }: InvoiceSlideOverP
   );
 }
 
+// ─── Add Outbound Payment Modal ───────────────────────────────────────────────
+
+interface AddOutboundPaymentModalProps {
+  clientName: string;
+  invoices: OutboundInvoice[];
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function AddOutboundPaymentModal({ clientName, invoices, onClose, onSuccess }: AddOutboundPaymentModalProps) {
+  const [visible,     setVisible]     = useState(false);
+  const [invoiceId,   setInvoiceId]   = useState<number | "">("");
+  const [paymentDate, setPaymentDate] = useState(TODAY);
+  const [amount,      setAmount]      = useState("");
+  const [saving,      setSaving]      = useState(false);
+  const [error,       setError]       = useState<string | null>(null);
+
+  useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
+
+  const handleClose = useCallback(() => {
+    setVisible(false);
+    setTimeout(onClose, 180);
+  }, [onClose]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") handleClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [handleClose]);
+
+  const unpaidInvoices = useMemo(
+    () => invoices.filter((inv) => inv.status !== "paid"),
+    [invoices]
+  );
+
+  function handleInvoiceChange(val: string) {
+    const id = val ? parseInt(val, 10) : "";
+    setInvoiceId(id);
+    if (id) {
+      const inv = invoices.find((i) => i.id === id);
+      if (inv) {
+        const paid = (inv.payments ?? []).reduce((s, p) => s + parseFloat(p.amount), 0);
+        const rem  = Math.max(0, parseFloat(inv.total_amount) - paid);
+        if (rem > 0) setAmount(rem.toFixed(2));
+      }
+    }
+  }
+
+  async function handleSave() {
+    setError(null);
+    const parsed = parseFloat(amount);
+    if (!amount || isNaN(parsed) || parsed <= 0) { setError("Iznos mora biti veći od 0."); return; }
+    if (!paymentDate) { setError("Datum je obavezan."); return; }
+    if (!invoiceId)   { setError("Faktura je obavezna."); return; }
+
+    setSaving(true);
+    try {
+      await api.post(`${INVOICES_BASE}/${invoiceId}/payments`, { amount: parsed, payment_date: paymentDate });
+      onSuccess();
+      handleClose();
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(msg ?? "Greška pri čuvanju. Pokušajte ponovo.");
+      setSaving(false);
+    }
+  }
+
+  const selectedInv = invoiceId ? invoices.find((i) => i.id === invoiceId) : null;
+  const remaining   = selectedInv
+    ? Math.max(0, parseFloat(selectedInv.total_amount) - (selectedInv.payments ?? []).reduce((s, p) => s + parseFloat(p.amount), 0))
+    : 0;
+
+  const lbl: React.CSSProperties = { display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: ".09em", textTransform: "uppercase" as const, color: "#6b7280", marginBottom: 6 };
+  const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", border: "1.5px solid #e5e7eb", borderRadius: 9, fontSize: 14, color: "#111418", background: "#fff", fontFamily: "inherit", outline: "none", boxSizing: "border-box" as const, transition: "border-color .15s" };
+
+  return (
+    <div onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 1050, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: visible ? "rgba(0,0,0,0.42)" : "rgba(0,0,0,0)", backdropFilter: visible ? "blur(4px)" : "blur(0px)", transition: "background .2s ease, backdrop-filter .2s ease" }}>
+      <div style={{ background: "#fff", borderRadius: 18, overflow: "hidden", width: "100%", maxWidth: 500, boxShadow: "0 24px 64px rgba(0,0,0,0.18)", transform: visible ? "scale(1) translateY(0)" : "scale(0.95) translateY(14px)", opacity: visible ? 1 : 0, transition: "transform .2s ease, opacity .2s ease" }}>
+        <div style={{ height: 4, background: "linear-gradient(90deg, #065f46 0%, #059669 60%, #10b981 100%)", borderRadius: "18px 18px 0 0" }} />
+
+        <div style={{ padding: "18px 22px 14px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#059669", marginBottom: 5 }}>{clientName}</div>
+            <div style={{ fontSize: 19, fontWeight: 700, color: "#111418", letterSpacing: "-0.01em" }}>Nova uplata</div>
+          </div>
+          <button type="button" onClick={handleClose} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#6b7280" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div style={{ padding: "18px 22px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={lbl}>VEZA SA FAKTUROM <span style={{ color: "#dc2626" }}>*</span></label>
+            <div style={{ position: "relative" }}>
+              <select value={invoiceId} onChange={(e) => handleInvoiceChange(e.target.value)}
+                style={{ ...inp, paddingRight: 32, appearance: "none" as const, cursor: "pointer", color: invoiceId ? "#111418" : "#9ca3af" }}
+                onFocus={(e) => (e.target.style.borderColor = "#059669")}
+                onBlur={(e) => (e.target.style.borderColor = "#e5e7eb")}>
+                <option value="">— Odaberite fakturu —</option>
+                {unpaidInvoices.map((inv) => {
+                  const paid = (inv.payments ?? []).reduce((s, p) => s + parseFloat(p.amount), 0);
+                  const rem  = Math.max(0, parseFloat(inv.total_amount) - paid);
+                  return (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.invoice_number}{rem > 0 ? ` · dug ${rem.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RSD` : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
+            {selectedInv && remaining > 0 && (
+              <div style={{ marginTop: 6, padding: "7px 10px", background: "#f0fdf4", borderRadius: 7, border: "1px solid #bbf7d0", fontSize: 12.5, color: "#059669", display: "flex", justifyContent: "space-between" }}>
+                <span>Preostalo dugovanje</span>
+                <span style={{ fontWeight: 700 }}>{remaining.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RSD</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label style={lbl}>DATUM <span style={{ color: "#dc2626" }}>*</span></label>
+            <DatePicker value={paymentDate} onChange={setPaymentDate} />
+          </div>
+
+          <div>
+            <label style={lbl}>IZNOS <span style={{ color: "#dc2626" }}>*</span></label>
+            <div style={{ position: "relative" }}>
+              <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00"
+                style={{ ...inp, paddingRight: 48 }}
+                onFocus={(e) => (e.target.style.borderColor = "#059669")}
+                onBlur={(e) => (e.target.style.borderColor = "#e5e7eb")} />
+              <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 12, fontWeight: 600, color: "#9ca3af", pointerEvents: "none" }}>RSD</span>
+            </div>
+          </div>
+
+          {error && (
+            <div style={{ padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 13, color: "#dc2626" }}>{error}</div>
+          )}
+        </div>
+
+        <div style={{ padding: "12px 22px 20px", borderTop: "1px solid #f3f4f6", display: "flex", gap: 10 }}>
+          <button type="button" onClick={handleClose} disabled={saving}
+            style={{ flex: 1, padding: "10px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+            Otkaži
+          </button>
+          <button type="button" onClick={handleSave} disabled={saving}
+            style={{ flex: 2, padding: "10px", borderRadius: 10, border: "1px solid #a7f3d0", background: saving ? "#f0fdf4" : "#d1fae5", color: "#065f46", fontSize: 14, fontWeight: 700, cursor: saving ? "wait" : "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, transition: "background .15s" }}
+            onMouseEnter={(e) => { if (!saving) (e.currentTarget as HTMLButtonElement).style.background = "#a7f3d0"; }}
+            onMouseLeave={(e) => { if (!saving) (e.currentTarget as HTMLButtonElement).style.background = "#d1fae5"; }}>
+            {saving ? "Čuvanje..." : (
+              <>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                Sačuvaj
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SortIndicator({ isActive, direction }: { isActive: boolean; direction: "asc" | "desc" | null }) {
   if (!isActive) return <IconSort w={12} h={12} style={{ opacity: 0.3, flexShrink: 0 }} />;
   return direction === "asc"
@@ -818,32 +1039,152 @@ function SortIndicator({ isActive, direction }: { isActive: boolean; direction: 
     : <IconSortDesc w={12} h={12} style={{ color: "var(--green)", flexShrink: 0 }} />;
 }
 
+// ─── Client Sidebar ───────────────────────────────────────────────────────────
+
+interface ClientSidebarProps {
+  clients: ClientWithReceivables[];
+  isLoading: boolean;
+  selectedId: number | null;
+  onSelect: (client: ClientWithReceivables | null) => void;
+}
+
+function ClientSidebar({ clients, isLoading, selectedId, onSelect }: ClientSidebarProps) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return clients;
+    const q = search.toLowerCase();
+    return clients.filter((c) => c.name.toLowerCase().includes(q));
+  }, [clients, search]);
+
+  const isAllSelected = selectedId === null;
+
+  return (
+    <div style={{ width: 272, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--sidebar-bg)" }}>
+      {/* Header */}
+      <div style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--border-soft)" }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--green)", marginBottom: 10 }}>Klijenti</div>
+        <div style={{ position: "relative" }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none" }}>
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Pretraga..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: "100%", padding: "7px 28px 7px 30px", border: "1.5px solid var(--border)", borderRadius: 8, fontSize: 12.5, color: "#111418", background: "#fff", fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color .15s" }}
+            onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
+            onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+          />
+          {search && (
+            <button onClick={() => setSearch("")}
+              style={{ position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)", width: 18, height: 18, borderRadius: "50%", border: "none", background: "#e5e7eb", color: "#6b7280", cursor: "pointer", fontSize: 12, display: "grid", placeItems: "center", lineHeight: 1 }}>×</button>
+          )}
+        </div>
+      </div>
+
+      {/* Svi klijenti */}
+      <button
+        onClick={() => onSelect(null)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "12px 14px", border: "none", borderLeft: `3px solid ${isAllSelected ? "var(--green)" : "transparent"}`, background: isAllSelected ? "var(--green-soft)" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left", borderBottom: "1px solid var(--border-soft)", transition: "background .1s" }}
+        onMouseEnter={(e) => { if (!isAllSelected) (e.currentTarget as HTMLButtonElement).style.background = "#f5f5f5"; }}
+        onMouseLeave={(e) => { if (!isAllSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+      >
+        <div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: isAllSelected ? "var(--green)" : "#111418" }}>Svi klijenti</div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>Zbirna analitika</div>
+        </div>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={isAllSelected ? "var(--green)" : "var(--muted-2)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <circle cx="12" cy="7" r="4" /><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+        </svg>
+      </button>
+
+      {/* Client list */}
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+        {isLoading ? (
+          <div style={{ padding: "20px 14px", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>Učitavanje...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: "20px 14px", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>
+            {search ? `Nema za „${search}"` : "Nema klijenata sa fakturama"}
+          </div>
+        ) : (
+          filtered.map((client) => {
+            const isActive = selectedId === client.id;
+            return (
+              <button
+                key={client.id}
+                onClick={() => onSelect(client)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "10px 14px", border: "none", borderLeft: `3px solid ${isActive ? "var(--green)" : "transparent"}`, background: isActive ? "var(--green-soft)" : "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left", borderBottom: "1px solid var(--border-soft)", transition: "background .1s", gap: 8 }}
+                onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = "#f5f5f5"; }}
+                onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = isActive ? "var(--green-soft)" : "transparent"; }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: isActive ? "var(--green)" : "#111418", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {client.name}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                    {client.total_invoices_count} fakt. · {client.total_received_count} upl.
+                  </div>
+                </div>
+                {client.total_receivable_balance > 0 && (
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flexShrink: 0, fontFamily: "var(--font-geist-mono), monospace" }}>
+                    {formatAmount(client.total_receivable_balance)}
+                  </div>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function IzlazneFakturePage() {
   const qc = useQueryClient();
+
+  const [selectedClient, setSelectedClient] = useState<ClientWithReceivables | null>(null);
+
   const [invoiceSlide, setInvoiceSlide] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<OutboundInvoice | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OutboundInvoice | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [clientPanelName, setClientPanelName] = useState<string | null>(null);
 
-  const [search, setSearch]                   = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [page, setPage]                       = useState(1);
-  const [statusFilter, setStatusFilter]       = useState("");
+  const [statsDateFrom,    setStatsDateFrom]    = useState(YEAR_START);
+  const [statsDateTo,      setStatsDateTo]      = useState(TODAY);
+  const [statsPeriodMode,  setStatsPeriodMode]  = useState<"ytd" | "custom">("ytd");
+  const [statsDocType,     setStatsDocType]     = useState("");
+  const [globalDatePreset, setGlobalDatePreset] = useState<"ovaj_mesec" | "prosli_mesec" | "ova_godina" | "sve">("ova_godina");
 
-  useEffect(() => {
-    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 350);
-    return () => clearTimeout(t);
-  }, [search]);
+  const [activeClientTab,  setActiveClientTab]  = useState<"fakture" | "uplate">("fakture");
+  const [wizardOpen,              setWizardOpen]              = useState(false);
+  const [wizardEditInvoice,       setWizardEditInvoice]       = useState<OutboundInvoice | null>(null);
+  const [wizardPreselectedClient, setWizardPreselectedClient] = useState<WizardClient | null>(null);
+  const [paymentModalOpen,        setPaymentModalOpen]        = useState(false);
+
+  const [page, setPage] = useState(1);
+
+  const { data: clientsAR = [], isLoading: loadingClients } = useQuery<ClientWithReceivables[]>({
+    queryKey: ["clients-receivables", TENANT],
+    queryFn: ({ signal }) => api.get(CLIENTS_AR_URL, { signal }).then((r) => r.data),
+    staleTime: 60_000,
+  });
 
   const { data: paginatedData, isLoading } = useQuery<PaginatedInvoices>({
-    queryKey: ["outbound-invoices", TENANT, debouncedSearch, page, statusFilter],
+    queryKey: ["outbound-invoices", TENANT, page, statsDateFrom, statsDateTo],
     queryFn: ({ signal }) =>
-      api.get(INVOICES_BASE, { signal, params: { ...(debouncedSearch ? { search: debouncedSearch } : {}), ...(statusFilter ? { status: statusFilter } : {}), page, per_page: 15 } }).then((r) => r.data),
+      api.get(INVOICES_BASE, { signal, params: {
+        page,
+        per_page: 20,
+        ...(statsDateFrom ? { date_from: statsDateFrom } : {}),
+        ...(statsDateTo   ? { date_to:   statsDateTo   } : {}),
+      } }).then((r) => r.data),
     placeholderData: (prev) => prev,
     staleTime: 30_000,
+    enabled: selectedClient === null,
   });
 
   const invoices = paginatedData?.data ?? [];
@@ -860,184 +1201,725 @@ export default function IzlazneFakturePage() {
     mutationFn: (id: number) => api.delete(`${INVOICES_BASE}/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["outbound-invoices", TENANT] });
+      qc.invalidateQueries({ queryKey: ["clients-receivables", TENANT] });
+      qc.invalidateQueries({ queryKey: ["client-stats", TENANT] });
       setDeleteTarget(null);
       setToast("Faktura je obrisana.");
     },
   });
 
-  const thStyle: React.CSSProperties = { padding: "10px 16px", textAlign: "left", fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted)", borderBottom: "1px solid var(--border-soft)", whiteSpace: "nowrap" };
-  const tdStyle: React.CSSProperties = { padding: "13px 16px", fontSize: 14, color: "#111418", borderBottom: "1px solid var(--border-soft)", verticalAlign: "middle" };
+  const statsClientId = selectedClient ? String(selectedClient.id) : "all";
+
+  const { data: clientFakture, isLoading: loadingClientFakture } = useQuery<PaginatedClientInvoices>({
+    queryKey: ["client-fakture", TENANT, statsClientId, statsDateFrom, statsDateTo, statsDocType],
+    queryFn: ({ signal }) =>
+      api.get(`/api/${TENANT}/finansije/klijenti/${statsClientId}/fakture`, {
+        signal,
+        params: {
+          date_from: statsDateFrom,
+          date_to:   statsDateTo,
+          per_page:  50,
+          ...(statsDocType ? { document_type: statsDocType } : {}),
+        },
+      }).then((r) => r.data as PaginatedClientInvoices),
+    enabled: selectedClient !== null,
+    staleTime: 30_000,
+  });
+
+  const { data: clientUplate, isLoading: loadingClientUplate } = useQuery<PaginatedClientPayments>({
+    queryKey: ["client-uplate", TENANT, statsClientId, statsDateFrom, statsDateTo],
+    queryFn: ({ signal }) =>
+      api.get(`/api/${TENANT}/finansije/klijenti/${statsClientId}/uplate`, {
+        signal,
+        params: { date_from: statsDateFrom, date_to: statsDateTo, per_page: 50 },
+      }).then((r) => r.data as PaginatedClientPayments),
+    enabled: selectedClient !== null,
+    staleTime: 30_000,
+  });
+
+  const { data: clientStats, isLoading: loadingStats } = useQuery<ClientStatsData>({
+    queryKey: ["client-stats", TENANT, statsClientId, statsDateFrom, statsDateTo, statsDocType],
+    queryFn: ({ signal }) =>
+      api.get(`/api/${TENANT}/finansije/klijenti/${statsClientId}/statistika`, {
+        signal,
+        params: {
+          date_from: statsDateFrom,
+          date_to:   statsDateTo,
+          ...(statsDocType ? { document_type: statsDocType } : {}),
+        },
+      }).then((r) => r.data as ClientStatsData),
+    staleTime: 30_000,
+  });
+
+  const clientInvoiceRows = useMemo<ClientInvoiceRow[]>(() =>
+    (clientFakture?.data ?? []).map((inv) => ({
+      id: inv.id,
+      issue_date: inv.issue_date,
+      invoice_number: inv.invoice_number,
+      amount_without_vat: parseFloat(inv.amount_without_vat) || 0,
+      vat_amount:         parseFloat(inv.vat_amount)         || 0,
+      total_amount:       parseFloat(inv.total_amount)       || 0,
+      status: inv.status,
+      _raw: inv,
+    })),
+    [clientFakture?.data]
+  );
+
+  const { items: sortedClientInvoices, requestSort: reqSortCI, sortConfig: sortCfgCI } =
+    useSortableData<ClientInvoiceRow>(clientInvoiceRows);
+
+  const clientPaymentRows = useMemo<ClientPaymentSortRow[]>(() =>
+    (clientUplate?.data ?? []).map((p) => ({ ...p, amount_num: parseFloat(p.amount) || 0 })),
+    [clientUplate?.data]
+  );
+
+  const { items: sortedClientPayments, requestSort: reqSortCP, sortConfig: sortCfgCP } =
+    useSortableData<ClientPaymentSortRow>(clientPaymentRows);
+
+  function applyGlobalPreset(preset: "ovaj_mesec" | "prosli_mesec" | "ova_godina" | "sve") {
+    const now = new Date();
+    const y   = now.getFullYear();
+    const m   = now.getMonth();
+    const fmt = (yr: number, mo: number, d: number) =>
+      `${yr}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    if (preset === "ovaj_mesec") {
+      setStatsDateFrom(fmt(y, m + 1, 1));
+      setStatsDateTo(fmt(y, m + 1, new Date(y, m + 1, 0).getDate()));
+    } else if (preset === "prosli_mesec") {
+      const pm = m === 0 ? 11 : m - 1;
+      const py = m === 0 ? y - 1 : y;
+      setStatsDateFrom(fmt(py, pm + 1, 1));
+      setStatsDateTo(fmt(py, pm + 1, new Date(py, pm + 1, 0).getDate()));
+    } else if (preset === "ova_godina") {
+      setStatsDateFrom(`${y}-01-01`);
+      setStatsDateTo(now.toISOString().split("T")[0]);
+    } else {
+      setStatsDateFrom("");
+      setStatsDateTo("");
+    }
+    setGlobalDatePreset(preset);
+  }
 
   return (
     <PageShell navId="fin">
+      {/* ── Page header ───────────────────────────────────────────────── */}
       <div style={{ padding: "var(--hero-padding, 8px 32px 6px)", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
         <div>
           <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 4, fontWeight: 500 }}>Finansije</div>
           <h1 style={{ fontSize: "var(--hero-h1, 28px)", fontWeight: 700, margin: "4px 0", letterSpacing: "-0.02em", color: "#111418" }}>Izlazne fakture</h1>
-          <p style={{ margin: "0 0 8px", fontSize: 15, color: "var(--muted)" }}>Kreiranje i praćenje izlaznih faktura i prihoda.</p>
+          <p style={{ margin: "0 0 8px", fontSize: 15, color: "var(--muted)" }}>Kreiranje i praćenje izlaznih faktura i potraživanja.</p>
         </div>
-        <button onClick={() => { setEditingInvoice(null); setInvoiceSlide(true); }}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", background: "var(--green)", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, whiteSpace: "nowrap" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
-          Nova faktura
+        <button
+          type="button"
+          onClick={() => { setWizardPreselectedClient(null); setWizardEditInvoice(null); setWizardOpen(true); }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "var(--green)", color: "#fff", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 6, whiteSpace: "nowrap", transition: "opacity .12s" }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.88"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+          </svg>
+          Unos
         </button>
       </div>
 
-      <div style={{ padding: "24px 32px 110px" }}>
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ position: "relative", flex: 1, maxWidth: 380 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", pointerEvents: "none" }}>
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+      {/* ── Prikaz filter ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 px-8 py-3 border-b border-gray-100 bg-white">
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest shrink-0">Prikaz:</span>
+        {([
+          { value: "" as const, label: "Sve", icon: null },
+          { value: "invoice" as const, label: "Fakture", icon: (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
             </svg>
-            <input type="text" placeholder="Pretraga po broju fakture ili klijentu..." value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: "100%", padding: "9px 12px 9px 38px", border: "1.5px solid var(--border)", borderRadius: 10, fontSize: 13.5, color: "#111418", background: "#fff", fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "border-color .15s" }}
-              onFocus={(e) => (e.target.style.borderColor = "var(--green)")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
-            />
-          </div>
-          <FilterDropdown value={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }}
-            placeholder="Sve fakture" color="green" options={STATUS_OPTIONS}
-            icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>}
-          />
-        </div>
-
-        <div style={{ background: "#fff", border: "1px solid var(--border)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
-          {isLoading ? (
-            <div style={{ padding: "56px 0", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>Učitavanje faktura...</div>
-          ) : invoices.length === 0 ? (
-            <div style={{ padding: "72px 0", textAlign: "center", color: "var(--muted)" }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 16px", display: "block", opacity: 0.3 }}>
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" />
-              </svg>
-              <p style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>{debouncedSearch ? `Nema rezultata za "${debouncedSearch}"` : "Nema izlaznih faktura"}</p>
-              <p style={{ margin: "6px 0 0", fontSize: 13.5 }}>{debouncedSearch ? "Promijenite ili obrišite pretragu." : "Dodajte prvu fakturu klikom na dugme iznad."}</p>
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead style={{ background: "#fafafa" }}>
-                  <tr>
-                    {(["invoice_number", "client_name", "issue_date", "due_date"] as const).map((key) => {
-                      const labels: Record<string, string> = { invoice_number: "Broj fakture", client_name: "Klijent", issue_date: "Datum izdavanja", due_date: "Rok plaćanja" };
-                      const isActive = sortConfig?.key === key;
-                      return (
-                        <th key={key} style={{ ...thStyle, cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                            {labels[key]}
-                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
-                          </span>
-                        </th>
-                      );
-                    })}
-                    {(["total_amount"] as const).map((key) => {
-                      const isActive = sortConfig?.key === key;
-                      return (
-                        <th key={key} style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
-                          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>
-                            Ukupan iznos
-                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
-                          </span>
-                        </th>
-                      );
-                    })}
-                    {(["status"] as const).map((key) => {
-                      const isActive = sortConfig?.key === key;
-                      return (
-                        <th key={key} style={{ ...thStyle, textAlign: "center", cursor: "pointer", userSelect: "none" }} onClick={() => requestSort(key)}>
-                          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                            Status
-                            <SortIndicator isActive={!!isActive} direction={isActive ? sortConfig!.direction : null} />
-                          </span>
-                        </th>
-                      );
-                    })}
-                    <th style={{ ...thStyle, textAlign: "center" }}>Akcije</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedInvoices.map((inv) => (
-                    <tr key={inv.id}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafafa"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
-                    >
-                      <td style={tdStyle}>
-                        <span style={{ fontFamily: "var(--font-geist-mono), monospace", fontSize: 13, fontWeight: 600, color: "#374151" }}>{inv.invoice_number}</span>
-                      </td>
-                      <td style={tdStyle}>
-                        {inv.client ? (
-                          <button onClick={() => setClientPanelName(inv.client.name)}
-                            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--green)" }}
-                            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "underline"; }}
-                            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.textDecoration = "none"; }}>
-                            {inv.client.name}
-                          </button>
-                        ) : <span style={{ color: "var(--muted-2)" }}>—</span>}
-                      </td>
-                      <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>{formatDate(inv.issue_date)}</td>
-                      <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
-                        {inv.due_date ? (() => {
-                          const daysLeft = Math.ceil((new Date(inv.due_date).getTime() - Date.now()) / 86_400_000);
-                          const overdue  = daysLeft < 0  && inv.status === "unpaid";
-                          const urgent   = daysLeft >= 0 && daysLeft <= 7 && inv.status === "unpaid";
-                          return (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: overdue ? "#dc2626" : urgent ? "#d97706" : "#111418", fontWeight: overdue || urgent ? 600 : 400 }}>
-                              {(overdue || urgent) && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: overdue ? "#dc2626" : "#d97706", flexShrink: 0 }} />}
-                              {formatDate(inv.due_date)}
-                            </span>
-                          );
-                        })() : <span style={{ color: "var(--muted-2)" }}>—</span>}
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-                        <span style={{ fontWeight: 700, fontSize: 14.5 }}>{formatCurrency(inv.total_amount)}</span>
-                      </td>
-                      <td style={{ ...tdStyle, textAlign: "center" }}><StatusBadge status={inv.status} /></td>
-                      <td style={{ ...tdStyle, textAlign: "center" }}>
-                        <div style={{ display: "inline-flex", gap: 6 }}>
-                          <button onClick={() => { setEditingInvoice(inv); setInvoiceSlide(true); }} title="Izmijeni"
-                            style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "#fff", cursor: "pointer", display: "grid", placeItems: "center", color: "var(--muted)", transition: "all .12s" }}
-                            onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--green)"; b.style.color = "var(--green)"; b.style.background = "var(--green-soft)"; }}
-                            onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--border)"; b.style.color = "var(--muted)"; b.style.background = "#fff"; }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" /></svg>
-                          </button>
-                          <button onClick={() => setDeleteTarget(inv)} title="Obriši"
-                            style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "#fff", cursor: "pointer", display: "grid", placeItems: "center", color: "var(--muted)", transition: "all .12s" }}
-                            onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "#fecaca"; b.style.color = "var(--red)"; b.style.background = "#fef2f2"; }}
-                            onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.borderColor = "var(--border)"; b.style.color = "var(--muted)"; b.style.background = "#fff"; }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6M9 6V4h6v2" /></svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {total > 0 && (
-          <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 13, color: "var(--muted)", paddingLeft: 4 }}>
-              {debouncedSearch
-                ? `${total} ${total === 1 ? "rezultat" : "rezultata"} za "${debouncedSearch}"`
-                : `${total} ${total === 1 ? "faktura" : total < 5 ? "fakture" : "faktura"}`}
-            </span>
-            {lastPage > 1 && (
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1}
-                  style={{ padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "#fff", color: page === 1 ? "var(--muted-2)" : "#374151", fontSize: 13, fontWeight: 500, cursor: page === 1 ? "default" : "pointer", fontFamily: "inherit" }}>← Prethodna</button>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#374151", padding: "0 8px" }}>{page} / {lastPage}</span>
-                <button onClick={() => setPage((p) => p + 1)} disabled={page >= lastPage}
-                  style={{ padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "#fff", color: page >= lastPage ? "var(--muted-2)" : "#374151", fontSize: 13, fontWeight: 500, cursor: page >= lastPage ? "default" : "pointer", fontFamily: "inherit" }}>Sledeća →</button>
-              </div>
-            )}
-          </div>
-        )}
+          )},
+          { value: "receipt" as const, label: "Gotovinski računi", icon: (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+          )},
+        ]).map(({ value, label, icon }) => {
+          const active = statsDocType === value;
+          return (
+            <button
+              key={value}
+              onClick={() => setStatsDocType(value)}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-lg border text-sm font-medium transition-all cursor-pointer ${
+                active
+                  ? "bg-emerald-50 border-emerald-500 text-emerald-800 shadow-sm"
+                  : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              {icon}
+              {label}
+            </button>
+          );
+        })}
       </div>
 
-      {clientPanelName && (
-        <ClientPanel clientName={clientPanelName} invoices={invoices} onClose={() => setClientPanelName(null)} />
+      {/* ── Split screen ──────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "stretch" }}>
+
+        {/* Left: Client sidebar */}
+        <ClientSidebar
+          clients={clientsAR}
+          isLoading={loadingClients}
+          selectedId={selectedClient?.id ?? null}
+          onSelect={(c) => {
+            setSelectedClient(c);
+            setPage(1);
+            setStatsPeriodMode("ytd");
+            setStatsDateFrom(YEAR_START);
+            setStatsDateTo(TODAY);
+            setStatsDocType("");
+            setActiveClientTab("fakture");
+            setWizardOpen(false);
+            setWizardEditInvoice(null);
+          }}
+        />
+
+        {/* Right: Main content */}
+        <div style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+          <div style={{ padding: "24px 32px 110px" }}>
+
+            {/* ── Panel header ── */}
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "var(--muted)", marginBottom: 6 }}>
+                  {selectedClient ? "Klijent" : "Pregled"}
+                </div>
+                <h2 style={{ fontSize: 26, fontWeight: 800, color: "#111418", letterSpacing: "-0.02em", margin: 0, lineHeight: 1.2 }}>
+                  {selectedClient ? selectedClient.name : "Svi klijenti"}
+                </h2>
+              </div>
+            </div>
+
+            {/* ── Filter row ── */}
+            {selectedClient ? (
+              <div style={{ background: "#f1f5f9", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, marginTop: 22, flexWrap: "wrap" as const }}>
+                <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase" as const, color: "#94a3b8", flexShrink: 0 }}>
+                  PERIOD
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => { setStatsPeriodMode("ytd"); setStatsDateFrom(YEAR_START); setStatsDateTo(TODAY); }}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg border transition-all duration-200 focus:outline-none ${
+                      statsPeriodMode === "ytd"
+                        ? "bg-emerald-50 border-emerald-500 text-emerald-800 shadow-sm"
+                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    Od početka godine
+                  </button>
+                  <button
+                    onClick={() => setStatsPeriodMode("custom")}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg border transition-all duration-200 focus:outline-none ${
+                      statsPeriodMode === "custom"
+                        ? "bg-emerald-50 border-emerald-500 text-emerald-800 shadow-sm"
+                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    Prilagođeno
+                  </button>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 4 }}>
+                  <span style={{ fontSize: 11.5, color: "#94a3b8", fontWeight: 700, flexShrink: 0 }}>OD</span>
+                  <div style={{ width: 148, opacity: statsPeriodMode === "ytd" ? 0.55 : 1, pointerEvents: statsPeriodMode === "ytd" ? "none" : "auto" }}>
+                    <DatePicker value={statsDateFrom} onChange={(d) => { setStatsDateFrom(d); setStatsPeriodMode("custom"); }} />
+                  </div>
+                  <span style={{ fontSize: 11.5, color: "#94a3b8", fontWeight: 700, flexShrink: 0 }}>DO</span>
+                  <div style={{ width: 148, opacity: statsPeriodMode === "ytd" ? 0.55 : 1, pointerEvents: statsPeriodMode === "ytd" ? "none" : "auto" }}>
+                    <DatePicker value={statsDateTo} onChange={(d) => { setStatsDateTo(d); setStatsPeriodMode("custom"); }} />
+                  </div>
+                </div>
+                <div style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" as const }}>
+                  {formatDate(statsDateFrom)} – {formatDate(statsDateTo)}
+                </div>
+              </div>
+            ) : (
+              /* Global date + doc type filter */
+              <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between shadow-sm" style={{ marginTop: 22, marginBottom: 8 }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500">OD</span>
+                  <div style={{ width: 148 }}>
+                    <DatePicker value={statsDateFrom} onChange={setStatsDateFrom} />
+                  </div>
+                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500">DO</span>
+                  <div style={{ width: 148 }}>
+                    <DatePicker value={statsDateTo} onChange={setStatsDateTo} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {([
+                    { key: "ovaj_mesec"   as const, label: "Ovaj mesec"   },
+                    { key: "prosli_mesec" as const, label: "Prošli mesec" },
+                    { key: "ova_godina"   as const, label: "Ova godina"   },
+                    { key: "sve"          as const, label: "Sve"          },
+                  ]).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => applyGlobalPreset(key)}
+                      className={`px-3 py-1.5 text-sm font-medium rounded-md border transition-colors ${
+                        globalDatePreset === key
+                          ? "bg-emerald-50 border-emerald-500 text-emerald-800"
+                          : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── KPI cards ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 20 }}>
+
+              {/* Fakturisano - period */}
+              <div style={{ background: "#fff", borderRadius: 14, borderTop: "2px solid #b45309", boxShadow: "0 1px 4px rgba(0,0,0,.06)", padding: "18px 20px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 10 }}>
+                  FAKTURE (PERIOD)
+                </div>
+                {loadingStats ? (
+                  <div style={{ height: 28, width: "60%", background: "#f3f4f6", borderRadius: 6 }} />
+                ) : (
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#111418", letterSpacing: "-0.02em", fontFamily: "var(--font-geist-mono), monospace" }}>
+                    {(clientStats?.invoiced_period.amount ?? 0).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 6 }}>
+                  {loadingStats ? "—" : `${clientStats?.invoiced_period.count ?? 0} fakt.`}
+                </div>
+              </div>
+
+              {/* Naplaćeno - period */}
+              <div style={{ background: "#fff", borderRadius: 14, borderTop: "2px solid #059669", boxShadow: "0 1px 4px rgba(0,0,0,.06)", padding: "18px 20px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 10 }}>
+                  NAPLAĆENO (PERIOD)
+                </div>
+                {loadingStats ? (
+                  <div style={{ height: 28, width: "60%", background: "#f3f4f6", borderRadius: 6 }} />
+                ) : (
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#059669", letterSpacing: "-0.02em", fontFamily: "var(--font-geist-mono), monospace" }}>
+                    {(clientStats?.collected_period.amount ?? 0).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 6 }}>
+                  {loadingStats ? "—" : "naplaćeno"}
+                </div>
+              </div>
+
+              {/* Saldo - ukupan */}
+              <div style={{ background: "#fff", borderRadius: 14, borderTop: "2px solid #b91c1c", boxShadow: "0 1px 4px rgba(0,0,0,.06)", padding: "18px 20px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#9ca3af", marginBottom: 10 }}>
+                  SALDO (UKUPAN)
+                </div>
+                {loadingStats ? (
+                  <div style={{ height: 28, width: "60%", background: "#f3f4f6", borderRadius: 6 }} />
+                ) : (
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#b91c1c", letterSpacing: "-0.02em", fontFamily: "var(--font-geist-mono), monospace" }}>
+                    {(clientStats?.total_receivable ?? 0).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 6 }}>
+                  {loadingStats ? "—" : "potražujemo"}
+                </div>
+              </div>
+
+            </div>
+
+            {/* ── Tabs + tabele za specifičnog klijenta ── */}
+            {selectedClient && (
+              <>
+                {/* Tab navigation */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 28, borderBottom: "1px solid #e5e7eb" }}>
+                  <div style={{ display: "flex", gap: 28 }}>
+                    {([
+                      { key: "fakture" as const, label: "Fakture", count: sortedClientInvoices.length },
+                      { key: "uplate"  as const, label: "Uplate",  count: sortedClientPayments.length },
+                    ]).map(({ key, label, count }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setActiveClientTab(key)}
+                        style={{
+                          background: "none", border: "none",
+                          borderBottom: `2px solid ${activeClientTab === key ? "#d97706" : "transparent"}`,
+                          paddingBottom: 10, paddingTop: 2,
+                          fontSize: 14,
+                          fontWeight: activeClientTab === key ? 700 : 500,
+                          color: activeClientTab === key ? "#111418" : "#9ca3af",
+                          cursor: "pointer", fontFamily: "inherit",
+                          transition: "color .12s, border-color .12s",
+                          whiteSpace: "nowrap" as const,
+                        }}
+                      >
+                        {label}{" "}
+                        <span style={{ fontSize: 12.5, fontWeight: 600, color: activeClientTab === key ? "#b45309" : "#d1d5db", marginLeft: 2 }}>
+                          ({count})
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  {activeClientTab === "fakture" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWizardPreselectedClient(selectedClient ? { id: selectedClient.id, name: selectedClient.name, pib: null } : null);
+                        setWizardEditInvoice(null);
+                        setWizardOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white border border-transparent px-4 py-2 text-[13px] font-semibold cursor-pointer transition-colors mb-0.5"
+                      style={{ fontFamily: "inherit" }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      Nova faktura
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentModalOpen(true)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, background: "#ecfdf5", color: "#065f46", border: "1px solid #a7f3d0", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "background .12s", marginBottom: 2 }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#d1fae5"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#ecfdf5"; }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      Nova uplata
+                    </button>
+                  )}
+                </div>
+
+                {/* ── Invoice table ── */}
+                {activeClientTab === "fakture" && (
+                  <div style={{ marginTop: 16, overflowX: "auto", borderRadius: 14, background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,.06)", marginBottom: 40 }}>
+                    {loadingClientFakture ? (
+                      <div style={{ padding: "40px 24px", textAlign: "center" as const, color: "var(--muted)", fontSize: 14 }}>
+                        Učitava se...
+                      </div>
+                    ) : sortedClientInvoices.length === 0 ? (
+                      <div style={{ padding: "48px 24px", textAlign: "center" as const, color: "var(--muted)", fontSize: 13 }}>
+                        Nema faktura za izabrani period
+                      </div>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ padding: "9px 12px", textAlign: "left" as const, fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#9ca3af", borderBottom: "1px solid #f1f5f9", width: 36 }}>
+                              RB
+                            </th>
+                            {([
+                              { col: "issue_date"         as const, label: "DATUM"        },
+                              { col: "invoice_number"     as const, label: "BROJ FAKTURE" },
+                              { col: "amount_without_vat" as const, label: "IZNOS"        },
+                              { col: "vat_amount"         as const, label: "PDV"          },
+                              { col: "total_amount"       as const, label: "UKUPNO"       },
+                              { col: "status"             as const, label: "STATUS"       },
+                            ] as { col: keyof ClientInvoiceRow; label: string }[]).map(({ col, label }) => {
+                              const isActive = sortCfgCI?.key === col;
+                              return (
+                                <th
+                                  key={col}
+                                  onClick={() => reqSortCI(col)}
+                                  style={{ padding: "9px 12px", textAlign: "left" as const, fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: isActive ? "#6b7280" : "#9ca3af", borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap" as const, cursor: "pointer", userSelect: "none" as const }}
+                                >
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                    {label}
+                                    {isActive ? (
+                                      sortCfgCI?.direction === "asc"
+                                        ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+                                        : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                                    ) : (
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+                                    )}
+                                  </span>
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedClientInvoices.map((row, idx) => (
+                            <tr
+                              key={row.id}
+                              onClick={() => {
+                                setWizardPreselectedClient(selectedClient ? { id: selectedClient.id, name: selectedClient.name, pib: null } : null);
+                                setWizardEditInvoice(row._raw);
+                                setWizardOpen(true);
+                              }}
+                              style={{ borderBottom: "1px solid #f8fafc", transition: "background .1s", cursor: "pointer" }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#f0fdf4"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = ""; }}
+                            >
+                              <td style={{ padding: "10px 12px", fontSize: 12, color: "#9ca3af", fontVariantNumeric: "tabular-nums" }}>
+                                {idx + 1}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#374151", whiteSpace: "nowrap" as const }}>
+                                {formatDate(row.issue_date)}
+                              </td>
+                              <td style={{ padding: "10px 12px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 12.5, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" as const }}>
+                                {row.invoice_number}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#374151", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+                                {row.amount_without_vat.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#374151", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+                                {row.vat_amount.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ padding: "10px 12px", fontWeight: 600, color: "#92400e", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+                                {row.total_amount.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ padding: "10px 12px" }}>
+                                <span style={{
+                                  display: "inline-block", padding: "2px 8px", borderRadius: 5, fontSize: 11.5, fontWeight: 600,
+                                  ...(row.status === "unpaid"
+                                    ? { background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }
+                                    : row.status === "partial"
+                                      ? { background: "#fff7ed", border: "1px solid #fed7aa", color: "#d97706" }
+                                      : { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a" }),
+                                }}>
+                                  {row.status === "unpaid" ? "Čeka" : row.status === "partial" ? "Djelimično" : "Plaćeno"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Payments table ── */}
+                {activeClientTab === "uplate" && (
+                  <div style={{ marginTop: 16, overflowX: "auto", borderRadius: 14, background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,.06)", marginBottom: 40 }}>
+                    {loadingClientUplate ? (
+                      <div style={{ padding: "40px 24px", textAlign: "center" as const, color: "var(--muted)", fontSize: 14 }}>
+                        Učitava se...
+                      </div>
+                    ) : sortedClientPayments.length === 0 ? (
+                      <div style={{ padding: "48px 24px", textAlign: "center" as const, color: "var(--muted)", fontSize: 13 }}>
+                        Nema uplata za izabrani period
+                      </div>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ padding: "9px 12px", textAlign: "left" as const, fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#9ca3af", borderBottom: "1px solid #f1f5f9", width: 36 }}>
+                              RB
+                            </th>
+                            {([
+                              { col: "payment_date"   as const, label: "DATUM"       },
+                              { col: "amount_num"     as const, label: "IZNOS"       },
+                              { col: "invoice_number" as const, label: "FAKTURA BR." },
+                              { col: "client_name"    as const, label: "KLIJENT"     },
+                            ] as { col: keyof ClientPaymentSortRow; label: string }[]).map(({ col, label }) => {
+                              const isActive = sortCfgCP?.key === col;
+                              return (
+                                <th
+                                  key={col}
+                                  onClick={() => reqSortCP(col)}
+                                  style={{ padding: "9px 12px", textAlign: "left" as const, fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: isActive ? "#6b7280" : "#9ca3af", borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap" as const, cursor: "pointer", userSelect: "none" as const }}
+                                >
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                    {label}
+                                    {isActive ? (
+                                      sortCfgCP?.direction === "asc"
+                                        ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+                                        : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                                    ) : (
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+                                    )}
+                                  </span>
+                                </th>
+                              );
+                            })}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedClientPayments.map((row, idx) => (
+                            <tr
+                              key={row.id}
+                              style={{ borderBottom: "1px solid #f8fafc", transition: "background .1s" }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#f0fdf4"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = ""; }}
+                            >
+                              <td style={{ padding: "10px 12px", fontSize: 12, color: "#9ca3af", fontVariantNumeric: "tabular-nums" }}>
+                                {idx + 1}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#374151", whiteSpace: "nowrap" as const }}>
+                                {formatDate(row.payment_date)}
+                              </td>
+                              <td style={{ padding: "10px 12px", fontWeight: 600, color: "#059669", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+                                {row.amount_num.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#374151", fontFamily: "var(--font-geist-mono), monospace", fontSize: 12.5 }}>
+                                {row.invoice_number ?? "—"}
+                              </td>
+                              <td style={{ padding: "10px 12px", color: "#374151" }}>
+                                {row.client_name ?? "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── Invoice table (Svi klijenti only) ── */}
+            {!selectedClient && (
+              <>
+                <div style={{ marginTop: 16, overflowX: "auto", borderRadius: 14, background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,.06)", marginBottom: 40 }}>
+                  {isLoading ? (
+                    <div style={{ padding: "40px 24px", textAlign: "center" as const, color: "var(--muted)", fontSize: 14 }}>Učitava se...</div>
+                  ) : invoices.length === 0 ? (
+                    <div style={{ padding: "48px 24px", textAlign: "center" as const, color: "var(--muted)", fontSize: 13 }}>
+                      Nema faktura za izabrani period
+                    </div>
+                  ) : (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ padding: "9px 12px", textAlign: "left" as const, fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#9ca3af", borderBottom: "1px solid #f1f5f9", width: 36 }}>
+                            RB
+                          </th>
+                          {([
+                            { col: "issue_date"         as const, label: "DATUM"         },
+                            { col: "invoice_number"     as const, label: "BROJ FAKTURE"  },
+                            { col: "client_name"        as const, label: "KLIJENT"       },
+                            { col: "amount_without_vat" as const, label: "IZNOS"         },
+                            { col: "vat_amount"         as const, label: "PDV"           },
+                            { col: "total_amount"       as const, label: "UKUPNO"        },
+                            { col: "status"             as const, label: "KNJIŽENJE"     },
+                          ]).map(({ col, label }) => {
+                            const isActive = sortConfig?.key === col;
+                            return (
+                              <th key={col} onClick={() => requestSort(col)}
+                                style={{ padding: "9px 12px", textAlign: "left" as const, fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: isActive ? "#6b7280" : "#9ca3af", borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap" as const, cursor: "pointer", userSelect: "none" as const }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                  {label}
+                                  {isActive ? (
+                                    sortConfig?.direction === "asc"
+                                      ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+                                      : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                                  ) : (
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6" /></svg>
+                                  )}
+                                </span>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedInvoices.map((inv, idx) => (
+                          <tr key={inv.id}
+                            onClick={() => { setEditingInvoice(inv); setInvoiceSlide(true); }}
+                            style={{ borderBottom: "1px solid #f8fafc", transition: "background .1s", cursor: "pointer" }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#f0fdf4"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = ""; }}
+                          >
+                            <td style={{ padding: "10px 12px", fontSize: 12, color: "#9ca3af", fontVariantNumeric: "tabular-nums" }}>
+                              {(page - 1) * 20 + idx + 1}
+                            </td>
+                            <td style={{ padding: "10px 12px", color: "#374151", whiteSpace: "nowrap" as const }}>
+                              {formatDate(inv.issue_date)}
+                            </td>
+                            <td style={{ padding: "10px 12px", fontFamily: "var(--font-geist-mono), monospace", fontSize: 12.5, fontWeight: 600, color: "#374151", whiteSpace: "nowrap" as const }}>
+                              {inv.invoice_number}
+                            </td>
+                            <td style={{ padding: "10px 12px", color: "#374151" }}>
+                              {inv.client?.name ?? <span style={{ color: "#d1d5db" }}>—</span>}
+                            </td>
+                            <td style={{ padding: "10px 12px", color: "#374151", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+                              {parseFloat(inv.amount_without_vat).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "10px 12px", color: "#374151", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+                              {parseFloat(inv.vat_amount).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "10px 12px", fontWeight: 600, color: "#92400e", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
+                              {parseFloat(inv.total_amount).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: "10px 12px" }}>
+                              <span style={{
+                                display: "inline-block", padding: "2px 8px", borderRadius: 5, fontSize: 11.5, fontWeight: 600,
+                                ...(inv.status === "unpaid"
+                                  ? { background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }
+                                  : inv.status === "partial"
+                                    ? { background: "#fff7ed", border: "1px solid #fed7aa", color: "#d97706" }
+                                    : { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a" }),
+                              }}>
+                                {inv.status === "unpaid" ? "Čeka" : inv.status === "partial" ? "Djelimično" : "Plaćeno"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                {total > 0 && lastPage > 1 && (
+                  <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 13, color: "var(--muted)", paddingLeft: 4 }}>
+                      {`${total} ${total === 1 ? "faktura" : total < 5 ? "fakture" : "faktura"}`}
+                    </span>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <button onClick={() => setPage((p) => p - 1)} disabled={page === 1}
+                        style={{ padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "#fff", color: page === 1 ? "var(--muted-2)" : "#374151", fontSize: 13, fontWeight: 500, cursor: page === 1 ? "default" : "pointer", fontFamily: "inherit" }}>← Prethodna</button>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#374151", padding: "0 8px" }}>{page} / {lastPage}</span>
+                      <button onClick={() => setPage((p) => p + 1)} disabled={page >= lastPage}
+                        style={{ padding: "6px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "#fff", color: page >= lastPage ? "var(--muted-2)" : "#374151", fontSize: 13, fontWeight: 500, cursor: page >= lastPage ? "default" : "pointer", fontFamily: "inherit" }}>Sledeća →</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {wizardOpen && (
+        <DocumentEntryWizard
+          moduleType="outbound"
+          preselectedClient={wizardPreselectedClient}
+          editOutboundInvoice={wizardEditInvoice}
+          onClose={() => { setWizardOpen(false); setWizardEditInvoice(null); setWizardPreselectedClient(null); }}
+          onDocumentSaved={() => {
+            qc.invalidateQueries({ queryKey: ["outbound-invoices",    TENANT] });
+            qc.invalidateQueries({ queryKey: ["client-fakture",       TENANT] });
+            qc.invalidateQueries({ queryKey: ["client-uplate",        TENANT] });
+            qc.invalidateQueries({ queryKey: ["client-stats",         TENANT] });
+            qc.invalidateQueries({ queryKey: ["clients-receivables",  TENANT] });
+            setToast(wizardEditInvoice ? "Faktura ažurirana." : "Faktura uspješno dodana.");
+          }}
+        />
+      )}
+
+      {paymentModalOpen && selectedClient && (
+        <AddOutboundPaymentModal
+          clientName={selectedClient.name}
+          invoices={clientFakture?.data ?? []}
+          onClose={() => setPaymentModalOpen(false)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["client-fakture",     TENANT] });
+            qc.invalidateQueries({ queryKey: ["client-uplate",      TENANT] });
+            qc.invalidateQueries({ queryKey: ["client-stats",       TENANT] });
+            qc.invalidateQueries({ queryKey: ["clients-receivables", TENANT] });
+            setToast("Uplata uspješno dodana.");
+          }}
+        />
       )}
 
       <InvoiceSlideOver open={invoiceSlide} editing={editingInvoice}

@@ -8,7 +8,7 @@ import DatePicker from "@/components/ui/DatePicker";
 import PageShell from "@/components/layout/PageShell";
 import api from "@/lib/axios";
 import { useSortableData } from "@/hooks/useSortableData";
-import NewPaymentModal from "./NewPaymentModal";
+import NewPaymentModal, { type EditingPaymentData } from "./NewPaymentModal";
 import DocumentEntryWizard from "./DocumentEntryWizard";
 import type {
   IncomingInvoice, Supplier, SupplierFormData,
@@ -73,10 +73,15 @@ interface InvoiceTableRow {
 
 interface PaymentTableRow {
   id: number;
+  supplier_id: number | null;
+  incoming_invoice_id: number | null;
   payment_date: string;
   amount: number;
   invoice_number: string;
   supplier_name: string;
+  description: string | null;
+  note: string | null;
+  payment_number: string | null;
 }
 
 interface SectorAnalytics {
@@ -707,6 +712,138 @@ function SupplierEditModal({
             <button type="submit" disabled={isSubmitting || saveMut.isPending}
               style={{ padding: "8px 18px", border: "none", borderRadius: 8, background: isSubmitting || saveMut.isPending ? "#4ade80" : "var(--green)", color: "#fff", fontSize: 13.5, fontWeight: 600, cursor: isSubmitting || saveMut.isPending ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
               {saveMut.isPending ? "Čuvanje..." : "Sačuvaj"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  );
+}
+
+// ─── Edit classification modal ───────────────────────────────────────────────
+
+interface ClassificationEditTarget {
+  type: "sector" | "unit" | "category";
+  id: number;
+  name: string;
+  parentId?: number | null;
+}
+
+function EditClassificationModal({
+  target, onClose, onSaved,
+}: {
+  target: ClassificationEditTarget;
+  onClose: () => void;
+  onSaved: (newName: string) => void;
+}) {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<{ name: string; parent_id: string }>({
+    defaultValues: { name: target.name, parent_id: String(target.parentId ?? "") },
+  });
+  const [apiError, setApiError] = useState("");
+
+  const needsParent  = target.type !== "sector";
+  const parentLabel  = target.type === "unit" ? "Sektor" : "Organizaciona jedinica";
+  const parentKey    = target.type === "unit" ? "sector_id" : "organizational_unit_id";
+  const parentQKey   = target.type === "unit" ? (["dict-sektori", TENANT] as const) : (["dict-jedinice", TENANT] as const);
+  const parentEndp   = target.type === "unit" ? `${SIFRARNICI_BASE}/sektori` : `${SIFRARNICI_BASE}/jedinice`;
+  const putEndpoint  = target.type === "sector"
+    ? `${SIFRARNICI_BASE}/sektori/${target.id}`
+    : target.type === "unit"
+      ? `${SIFRARNICI_BASE}/jedinice/${target.id}`
+      : `${SIFRARNICI_BASE}/kategorije/${target.id}`;
+  const modalTitle   = target.type === "sector" ? "Izmena sektora" : target.type === "unit" ? "Izmena jedinice" : "Izmena kategorije";
+
+  const { data: parentOptions = [] } = useQuery<DictOption[]>({
+    queryKey: parentQKey,
+    queryFn: ({ signal }) => api.get(parentEndp, { signal }).then((r) => r.data as DictOption[]),
+    enabled: needsParent,
+    staleTime: 60_000,
+  });
+
+  const clsSelectStyle: React.CSSProperties = {
+    width: "100%", padding: "9px 12px", paddingRight: 32,
+    border: "1.5px solid var(--border)", borderRadius: 9,
+    fontSize: 14, color: "#111418", background: "#fff",
+    fontFamily: "inherit", outline: "none", cursor: "pointer",
+    appearance: "none" as const,
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a8f98' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+    backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center",
+    boxSizing: "border-box" as const,
+  };
+
+  async function onSubmit({ name, parent_id }: { name: string; parent_id: string }) {
+    setApiError("");
+    try {
+      const payload: Record<string, string | number> = { name };
+      if (needsParent && parent_id) payload[parentKey] = Number(parent_id);
+      await api.put(putEndpoint, payload);
+      onSaved(name);
+    } catch {
+      setApiError("Greška pri čuvanju. Pokušajte ponovo.");
+    }
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(10,17,36,.42)", zIndex: 300, backdropFilter: "blur(2px)" }} />
+      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "#fff", borderRadius: 18, padding: "28px 28px 24px", width: 440, zIndex: 301, boxShadow: "0 20px 60px rgba(16,24,40,.18)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--green-soft)", color: "var(--green)", display: "grid", placeItems: "center" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" />
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#111418" }}>{modalTitle}</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 1 }}>{target.name}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 20 }}>×</button>
+        </div>
+
+        <form onSubmit={handleSubmit(onSubmit)} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {needsParent && (
+            <div>
+              <label style={labelStyle}>{parentLabel}</label>
+              <select
+                {...register("parent_id", { required: `${parentLabel} je obavezan` })}
+                style={{ ...clsSelectStyle, borderColor: errors.parent_id ? "var(--red)" : "var(--border)" }}
+                onFocus={(e) => { if (!errors.parent_id) e.currentTarget.style.borderColor = "var(--green)"; }}
+                onBlur={(e) => { if (!errors.parent_id) e.currentTarget.style.borderColor = "var(--border)"; }}
+              >
+                <option value="">Odaberite {parentLabel.toLowerCase()}...</option>
+                {parentOptions.map((opt) => (
+                  <option key={opt.id} value={String(opt.id)}>
+                    {opt.name}{opt.sector ? ` (${opt.sector.name})` : ""}
+                  </option>
+                ))}
+              </select>
+              {errors.parent_id && <p style={errStyle}>{errors.parent_id.message}</p>}
+            </div>
+          )}
+          <div>
+            <label style={labelStyle}>Naziv</label>
+            <input
+              type="text"
+              autoFocus
+              {...register("name", { required: "Naziv je obavezan" })}
+              style={{ ...inputStyle, borderColor: errors.name ? "var(--red)" : "var(--border)" }}
+              onFocus={(e) => { if (!errors.name) e.currentTarget.style.borderColor = "var(--green)"; }}
+              onBlur={(e) => { if (!errors.name) e.currentTarget.style.borderColor = "var(--border)"; }}
+            />
+            {errors.name && <p style={errStyle}>{errors.name.message}</p>}
+          </div>
+          {apiError && (
+            <div style={{ padding: "10px 14px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fecaca", color: "var(--red)", fontSize: 13 }}>
+              {apiError}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
+            <button type="button" onClick={onClose} style={{ padding: "9px 18px", border: "1px solid var(--border)", borderRadius: 9, background: "#fff", color: "#374151", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Otkaži</button>
+            <button type="submit" disabled={isSubmitting} style={{ padding: "9px 22px", border: "none", borderRadius: 9, background: isSubmitting ? "#4ade80" : "var(--green)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: isSubmitting ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+              {isSubmitting ? "Čuvanje..." : "Sačuvaj izmene"}
             </button>
           </div>
         </form>
@@ -1486,6 +1623,10 @@ export default function UlazneFakturePage() {
   const [editingSupplier, setEditingSupplier]   = useState<SupplierWithBalance | null>(null);
   const [deletingSupplier, setDeletingSupplier] = useState<SupplierWithBalance | null>(null);
 
+  // Classification CRUD
+  const [editingClassification, setEditingClassification]   = useState<ClassificationEditTarget | null>(null);
+  const [deletingClassification, setDeletingClassification] = useState<{ type: "sector" | "unit" | "category"; id: number; name: string } | null>(null);
+
   // Period filter
   const [periodMode, setPeriodMode] = useState<"ytd" | "custom">("ytd");
   const [dateFrom, setDateFrom]     = useState(YEAR_START);
@@ -1573,6 +1714,8 @@ export default function UlazneFakturePage() {
   const { items: sortedPayments, requestSort: reqSortPayment, sortConfig: sortCfgPayment } = useSortableData<PaymentTableRow>(paymentRows);
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [editingPayment, setEditingPayment]     = useState<PaymentTableRow | null>(null);
+  const [deletingPayment, setDeletingPayment]   = useState<PaymentTableRow | null>(null);
 
   const unpaidInvoices = useMemo(
     () => invoiceRows
@@ -1582,6 +1725,19 @@ export default function UlazneFakturePage() {
   );
   const nextPaymentNumber = (selectedSupplier?.total_payments_count ?? paymentRows.length) + 1;
 
+  const deletePaymentMut = useMutation({
+    mutationFn: (id: number) => api.delete(`/api/${TENANT}/finansije/uplate/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["supplier-stats",    TENANT] });
+      qc.invalidateQueries({ queryKey: ["supplier-invoices", TENANT] });
+      qc.invalidateQueries({ queryKey: ["supplier-payments", TENANT] });
+      qc.invalidateQueries({ queryKey: ["suppliers-with-balance", TENANT] });
+      setDeletingPayment(null);
+      setEditingPayment(null);
+      setToast("Uplata obrisana.");
+    },
+  });
+
   const deleteSupplierMut = useMutation({
     mutationFn: (id: number) => api.delete(`${SUPPLIERS_BASE}/${id}`),
     onSuccess: () => {
@@ -1589,6 +1745,38 @@ export default function UlazneFakturePage() {
       setSelectedSupplier(null);
       setDeletingSupplier(null);
       setToast("Dobavljač obrisan.");
+    },
+  });
+
+  const deleteClassificationMut = useMutation({
+    mutationFn: ({ type, id }: { type: "sector" | "unit" | "category"; id: number }) => {
+      const ep = type === "sector"
+        ? `${SIFRARNICI_BASE}/sektori/${id}`
+        : type === "unit"
+          ? `${SIFRARNICI_BASE}/jedinice/${id}`
+          : `${SIFRARNICI_BASE}/kategorije/${id}`;
+      return api.delete(ep);
+    },
+    onSuccess: (_, { type }) => {
+      if (type === "sector") {
+        setSelectedSector(null);
+        setSelectedUnit(null);
+        setSelectedCategory(null);
+        qc.invalidateQueries({ queryKey: ["sektori-analitika", TENANT] });
+        qc.invalidateQueries({ queryKey: ["dict-sektori", TENANT] });
+      } else if (type === "unit") {
+        setSelectedUnit(null);
+        setSelectedCategory(null);
+        qc.invalidateQueries({ queryKey: ["jedinice-analitika", TENANT] });
+        qc.invalidateQueries({ queryKey: ["dict-jedinice", TENANT] });
+        qc.invalidateQueries({ queryKey: ["unit-kategorije", TENANT] });
+      } else {
+        setSelectedCategory(null);
+        qc.invalidateQueries({ queryKey: ["unit-kategorije", TENANT] });
+        qc.invalidateQueries({ queryKey: ["dict-kategorije", TENANT] });
+      }
+      setDeletingClassification(null);
+      setToast("Stavka obrisana.");
     },
   });
 
@@ -2047,15 +2235,31 @@ export default function UlazneFakturePage() {
                         ) : "—"}
                       </div>
                     </div>
-                    <button
-                      onClick={() => setSelectedCategory(null)}
-                      style={{ flexShrink: 0, marginTop: 4, padding: "7px 14px", fontSize: 13, fontWeight: 500, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "background .15s" }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-                      Nazad
-                    </button>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, marginTop: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditingClassification({ type: "category", id: selectedCategory.id, name: selectedCategory.name, parentId: selectedUnit.id })}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "border-color .15s, background .15s" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#9ca3af"; (e.currentTarget as HTMLButtonElement).style.background = "#f3f4f6"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#e5e7eb"; (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+                      >Izmeni</button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingClassification({ type: "category", id: selectedCategory.id, name: selectedCategory.name })}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "color .15s, border-color .15s, background .15s" }}
+                        onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.color = "var(--red)"; b.style.borderColor = "#fecaca"; b.style.background = "#fef2f2"; }}
+                        onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.color = "#374151"; b.style.borderColor = "#e5e7eb"; b.style.background = "#f9fafb"; }}
+                      >Obriši</button>
+                      <button
+                        onClick={() => setSelectedCategory(null)}
+                        style={{ padding: "7px 14px", fontSize: 13, fontWeight: 500, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "background .15s" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                        Nazad
+                      </button>
+                    </div>
                   </div>
 
                   {/* 4 KPI cards */}
@@ -2214,15 +2418,31 @@ export default function UlazneFakturePage() {
                         Jedinica · {unitKategorije?.categories.length ?? "—"} kategorija · klikni za fakture
                       </div>
                     </div>
-                    <button
-                      onClick={() => { setSelectedUnit(null); setSelectedCategory(null); }}
-                      style={{ flexShrink: 0, marginTop: 4, padding: "7px 14px", fontSize: 13, fontWeight: 500, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "background .15s" }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-                      Sektor
-                    </button>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, marginTop: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditingClassification({ type: "unit", id: selectedUnit.id, name: selectedUnit.name, parentId: selectedUnit.sector_id })}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "border-color .15s, background .15s" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#9ca3af"; (e.currentTarget as HTMLButtonElement).style.background = "#f3f4f6"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#e5e7eb"; (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+                      >Izmeni</button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingClassification({ type: "unit", id: selectedUnit.id, name: selectedUnit.name })}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "color .15s, border-color .15s, background .15s" }}
+                        onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.color = "var(--red)"; b.style.borderColor = "#fecaca"; b.style.background = "#fef2f2"; }}
+                        onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.color = "#374151"; b.style.borderColor = "#e5e7eb"; b.style.background = "#f9fafb"; }}
+                      >Obriši</button>
+                      <button
+                        onClick={() => { setSelectedUnit(null); setSelectedCategory(null); }}
+                        style={{ padding: "7px 14px", fontSize: 13, fontWeight: 500, border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", transition: "background .15s" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                        Sektor
+                      </button>
+                    </div>
                   </div>
 
                   {/* KPI cards */}
@@ -2324,14 +2544,34 @@ export default function UlazneFakturePage() {
               ) : (
                 /* ── Sector selected, no unit ── */
                 <>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "var(--muted)", marginBottom: 6 }}>
-                    {selectedSector.name}
-                  </div>
-                  <h2 style={{ fontSize: 26, fontWeight: 800, color: "#111418", letterSpacing: "-0.02em", margin: 0, lineHeight: 1.2 }}>
-                    {selectedSector.name}
-                  </h2>
-                  <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 5, marginBottom: 22 }}>
-                    Sektor · {selectedSector.total_units} {selectedSector.total_units === 1 ? "jedinica" : selectedSector.total_units < 5 ? "jedinice" : "jedinica"} · {selectedSector.total_items} stavki
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 22 }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "var(--muted)", marginBottom: 6 }}>
+                        {selectedSector.name}
+                      </div>
+                      <h2 style={{ fontSize: 26, fontWeight: 800, color: "#111418", letterSpacing: "-0.02em", margin: 0, lineHeight: 1.2 }}>
+                        {selectedSector.name}
+                      </h2>
+                      <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 5 }}>
+                        Sektor · {selectedSector.total_units} {selectedSector.total_units === 1 ? "jedinica" : selectedSector.total_units < 5 ? "jedinice" : "jedinica"} · {selectedSector.total_items} stavki
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0, marginTop: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditingClassification({ type: "sector", id: selectedSector.id, name: selectedSector.name })}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "border-color .15s, background .15s" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#9ca3af"; (e.currentTarget as HTMLButtonElement).style.background = "#f3f4f6"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#e5e7eb"; (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+                      >Izmeni</button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingClassification({ type: "sector", id: selectedSector.id, name: selectedSector.name })}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#f9fafb", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "color .15s, border-color .15s, background .15s" }}
+                        onMouseEnter={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.color = "var(--red)"; b.style.borderColor = "#fecaca"; b.style.background = "#fef2f2"; }}
+                        onMouseLeave={(e) => { const b = e.currentTarget as HTMLButtonElement; b.style.color = "#374151"; b.style.borderColor = "#e5e7eb"; b.style.background = "#f9fafb"; }}
+                      >Obriši</button>
+                    </div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
                     <div style={{ background: "#fff", borderRadius: 14, borderTop: "2px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,.06)", padding: "18px 20px" }}>
@@ -2744,8 +2984,9 @@ export default function UlazneFakturePage() {
                     {sortedPayments.map((row, idx) => (
                       <tr
                         key={row.id}
-                        style={{ borderBottom: "1px solid #f8fafc", transition: "background .1s" }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#fafafa"; }}
+                        onClick={() => setEditingPayment(row)}
+                        style={{ borderBottom: "1px solid #f8fafc", transition: "background .1s", cursor: "pointer" }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "#f0fdf4"; }}
                         onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = ""; }}
                       >
                         <td style={{ padding: "10px 12px", fontSize: 12, color: "#9ca3af", fontVariantNumeric: "tabular-nums" }}>
@@ -2829,6 +3070,70 @@ export default function UlazneFakturePage() {
             qc.invalidateQueries({ queryKey: ["suppliers-with-balance", TENANT] });
             setToast("Uplata evidentirana.");
           }}
+        />
+      )}
+
+      {/* Edit payment modal */}
+      {editingPayment && (
+        <NewPaymentModal
+          unpaidInvoices={unpaidInvoices}
+          editingPayment={editingPayment as EditingPaymentData}
+          onClose={() => setEditingPayment(null)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["supplier-stats",    TENANT] });
+            qc.invalidateQueries({ queryKey: ["supplier-invoices", TENANT] });
+            qc.invalidateQueries({ queryKey: ["supplier-payments", TENANT] });
+            qc.invalidateQueries({ queryKey: ["suppliers-with-balance", TENANT] });
+            setEditingPayment(null);
+            setToast("Uplata ažurirana.");
+          }}
+          onDelete={() => setDeletingPayment(editingPayment)}
+        />
+      )}
+
+      {/* Delete payment confirm */}
+      {deletingPayment && (
+        <DeleteConfirm
+          title="Obriši uplatu?"
+          message={<>Uplata od <strong>{deletingPayment.amount.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} RSD</strong> će biti trajno obrisana.</>}
+          onConfirm={() => deletePaymentMut.mutate(deletingPayment.id)}
+          onCancel={() => setDeletingPayment(null)}
+        />
+      )}
+
+      {/* Classification edit modal */}
+      {editingClassification && (
+        <EditClassificationModal
+          target={editingClassification}
+          onClose={() => setEditingClassification(null)}
+          onSaved={(newName) => {
+            const { type } = editingClassification;
+            if (type === "sector") {
+              setSelectedSector((prev) => prev ? { ...prev, name: newName } : null);
+              qc.invalidateQueries({ queryKey: ["sektori-analitika", TENANT] });
+              qc.invalidateQueries({ queryKey: ["dict-sektori", TENANT] });
+            } else if (type === "unit") {
+              setSelectedUnit((prev) => prev ? { ...prev, name: newName } : null);
+              qc.invalidateQueries({ queryKey: ["jedinice-analitika", TENANT] });
+              qc.invalidateQueries({ queryKey: ["dict-jedinice", TENANT] });
+            } else {
+              setSelectedCategory((prev) => prev ? { ...prev, name: newName } : null);
+              qc.invalidateQueries({ queryKey: ["unit-kategorije", TENANT] });
+              qc.invalidateQueries({ queryKey: ["dict-kategorije", TENANT] });
+            }
+            setEditingClassification(null);
+            setToast("Izmene sačuvane.");
+          }}
+        />
+      )}
+
+      {/* Classification delete confirm */}
+      {deletingClassification && (
+        <DeleteConfirm
+          title={`Obriši ${deletingClassification.type === "sector" ? "sektor" : deletingClassification.type === "unit" ? "jedinicu" : "kategoriju"}?`}
+          message={<>Stavka <strong>{deletingClassification.name}</strong> će biti trajno obrisana.</>}
+          onConfirm={() => deleteClassificationMut.mutate(deletingClassification)}
+          onCancel={() => setDeletingClassification(null)}
         />
       )}
 

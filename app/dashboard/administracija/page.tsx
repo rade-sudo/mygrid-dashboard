@@ -24,7 +24,6 @@ const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 interface AdminStats {
   total_employees: number;
   currently_absent: number;
-  expiring_contracts: number;
   total_contracts: number;
 }
 
@@ -255,7 +254,7 @@ export default function AdministracijaPage() {
           <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 14 }}>
             Statistike
           </div>
-          <div className={`grid w-full gap-4 grid-cols-1 sm:grid-cols-2 ${stats && stats.expiring_contracts > 0 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+          <div className="grid w-full gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {isLoading || !stats ? (
               <KpiSkeleton />
             ) : (
@@ -284,19 +283,6 @@ export default function AdministracijaPage() {
                   label="Ukupno ugovora"
                   sub="Svi poslovni ugovori"
                 />
-                {stats.expiring_contracts > 0 && (
-                  <KpiCard
-                    iconBg="#fdf3e3"
-                    iconColor="#d97706"
-                    icon={<IconActivity w={22} h={22} />}
-                    value={stats.expiring_contracts}
-                    label="Ističu ugovori"
-                    sub="U narednih 30 dana"
-                    accent
-                    accentColor="#d97706"
-                    accentBg="#fdf3e3"
-                  />
-                )}
               </>
             )}
           </div>

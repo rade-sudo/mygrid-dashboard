@@ -5,7 +5,12 @@ import { createPortal } from "react-dom";
 import api from "@/lib/axios";
 import CashReceiptForm from "./CashReceiptForm";
 import WizardInvoiceForm from "./WizardInvoiceForm";
+import WizardOutboundInvoiceForm from "./WizardOutboundInvoiceForm";
+import type { WizardClient } from "./WizardOutboundInvoiceForm";
 import type { IncomingInvoice } from "@/types/supplier";
+import type { OutboundInvoice } from "@/types/client";
+
+export type { WizardClient };
 
 const TENANT = process.env.NEXT_PUBLIC_TENANT_ID ?? "grid";
 
@@ -19,7 +24,7 @@ export interface WizardSupplier {
 }
 
 interface Props {
-  suppliers: WizardSupplier[];
+  suppliers?: WizardSupplier[];
   onClose: () => void;
   onSupplierCreated?: () => void;
   onOpenInvoiceForm?: (supplier: WizardSupplier) => void;
@@ -28,13 +33,20 @@ interface Props {
   editInvoice?: IncomingInvoice | null;
   editSupplier?: WizardSupplier | null;
   preselectedSupplier?: WizardSupplier | null;
+  // Outbound mode
+  moduleType?: "inbound" | "outbound";
+  clients?: WizardClient[];
+  editOutboundInvoice?: OutboundInvoice | null;
+  preselectedClient?: WizardClient | null;
+  onClientCreated?: () => void;
 }
 
 function fmt(n: number): string {
   return n.toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-const STEP_LABELS = ["Dobavljač", "Tip unosa", "Pregled"];
+const STEP_LABELS_INBOUND  = ["Dobavljač", "Tip unosa", "Pregled"];
+const STEP_LABELS_OUTBOUND = ["Klijent",   "Tip unosa", "Pregled"];
 
 type EntryType = "faktura" | "gotovinska" | "uplata";
 
@@ -85,11 +97,53 @@ const ENTRY_TYPES: EntryTypeOption[] = [
   },
 ];
 
-export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCreated, onOpenInvoiceForm, onOpenPaymentModal, onDocumentSaved, editInvoice, editSupplier, preselectedSupplier }: Props) {
-  const isEditMode = editInvoice != null;
+const OUTBOUND_ENTRY_TYPES: EntryTypeOption[] = [
+  {
+    key: "faktura",
+    label: "Izlazna faktura",
+    subtitle: "Faktura sa PDV-om, stavkama i rokom plaćanja",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="9" y1="13" x2="15" y2="13" />
+        <line x1="9" y1="17" x2="12" y2="17" />
+      </svg>
+    ),
+  },
+  {
+    key: "gotovinska",
+    label: "Gotovinski račun",
+    subtitle: "Naplaćeno odmah — bez odgođenog roka plaćanja",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="6" width="20" height="12" rx="2" />
+        <circle cx="12" cy="12" r="2" />
+        <path d="M6 12h.01M18 12h.01" />
+      </svg>
+    ),
+  },
+  {
+    key: "uplata",
+    label: "Evidencija priliva / uplate",
+    subtitle: "Uplata klijenta za postojeću ili novu fakturu",
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 10 12 5 7 10" />
+        <line x1="12" y1="5" x2="12" y2="17" />
+      </svg>
+    ),
+  },
+];
+
+export default function DocumentEntryWizard({ suppliers = [], onClose, onSupplierCreated, onOpenInvoiceForm, onOpenPaymentModal, onDocumentSaved, editInvoice, editSupplier, preselectedSupplier, moduleType = "inbound", clients = [], editOutboundInvoice, preselectedClient, onClientCreated }: Props) {
+  const isOutbound = moduleType === "outbound";
+  const isEditMode = isOutbound ? editOutboundInvoice != null : editInvoice != null;
   const [visible,          setVisible]          = useState(false);
-  const [step,             setStep]             = useState<1 | 2 | 3>(() => isEditMode ? 3 : preselectedSupplier != null ? 2 : 1);
-  const [selectedSupplier, setSelectedSupplier] = useState<WizardSupplier | null>(() => isEditMode ? (editSupplier ?? null) : preselectedSupplier ?? null);
+  const [step,             setStep]             = useState<1 | 2 | 3>(() => isEditMode ? 3 : (isOutbound ? preselectedClient : preselectedSupplier) != null ? 2 : 1);
+  const [selectedSupplier, setSelectedSupplier] = useState<WizardSupplier | null>(() => isEditMode && !isOutbound ? (editSupplier ?? null) : preselectedSupplier ?? null);
+  const [selectedClient,   setSelectedClient]   = useState<WizardClient | null>(() => isOutbound ? (editOutboundInvoice ? (preselectedClient ?? null) : (preselectedClient ?? null)) : null);
   const [selectedType,     setSelectedType]     = useState<EntryType | null>(() => isEditMode ? "faktura" : null);
   const [searchQuery,      setSearchQuery]      = useState("");
   const [quickAdding,      setQuickAdding]      = useState(false);
@@ -100,6 +154,8 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
   const [invSaving,        setInvSaving]        = useState(false);
   const [invError,         setInvError]         = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [liveClients, setLiveClients] = useState<WizardClient[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
 
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
 
@@ -118,36 +174,78 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
     if (step === 1) setTimeout(() => searchRef.current?.focus(), 90);
   }, [step]);
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    if (!isOutbound || step !== 1) return;
+    const q = searchQuery.trim();
+    if (!q) { setLiveClients([]); setLiveLoading(false); return; }
+    setLiveLoading(true);
+    setLiveClients([]);
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => {
+      api.get(`/api/${TENANT}/finansije/clients`, {
+        signal: ctrl.signal,
+        params: { search: q, all: 1, per_page: 20 },
+      })
+        .then((r) => {
+          const rows: Array<{ id: number; name: string; pib?: string | null }> =
+            Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
+          setLiveClients(rows.map((c) => ({ id: c.id, name: c.name, pib: c.pib ?? null })));
+        })
+        .catch(() => undefined)
+        .finally(() => setLiveLoading(false));
+    }, 280);
+    return () => { clearTimeout(timer); ctrl.abort(); };
+  }, [isOutbound, step, searchQuery]);
+
+  const filteredSuppliers = useMemo(() => {
     if (!searchQuery.trim()) return suppliers;
     const q = searchQuery.trim().toLowerCase();
     return suppliers.filter((s) => s.name.toLowerCase().includes(q));
   }, [suppliers, searchQuery]);
 
+  const filteredClients = useMemo(() => {
+    if (!searchQuery.trim()) return clients;
+    const q = searchQuery.trim().toLowerCase();
+    return clients.filter((c) => c.name.toLowerCase().includes(q));
+  }, [clients, searchQuery]);
+
+  const displayClients = isOutbound ? (searchQuery.trim() ? liveClients : filteredClients) : filteredClients;
+  const filtered = isOutbound ? displayClients : filteredSuppliers;
+
   const showQuickAdd = useMemo(() => {
     if (!searchQuery.trim()) return false;
     const q = searchQuery.trim().toLowerCase();
+    if (isOutbound) {
+      const list = searchQuery.trim() ? liveClients : clients;
+      return !list.some((c) => c.name.toLowerCase() === q);
+    }
     return !suppliers.some((s) => s.name.toLowerCase() === q);
-  }, [suppliers, searchQuery]);
+  }, [isOutbound, suppliers, clients, liveClients, searchQuery]);
 
   async function handleQuickAdd() {
     if (!searchQuery.trim() || quickAdding) return;
     setQuickAdding(true);
     try {
-      const res = await api.post<{ id: number; name: string; pib: string | null }>(
-        `/api/${TENANT}/finansije/suppliers`,
-        { name: searchQuery.trim() },
-      );
-      const s: WizardSupplier = {
-        id: res.data.id,
-        name: res.data.name,
-        pib: res.data.pib,
-        total_invoices_count: 0,
-        total_payments_count: 0,
-        total_debt: 0,
-      };
-      onSupplierCreated?.();
-      pickSupplier(s);
+      if (isOutbound) {
+        const res = await api.post<{ id: number; name: string; pib: string | null }>(
+          `/api/${TENANT}/finansije/clients`,
+          { name: searchQuery.trim() },
+        );
+        const c: WizardClient = { id: res.data.id, name: res.data.name, pib: res.data.pib };
+        onClientCreated?.();
+        pickClient(c);
+      } else {
+        const res = await api.post<{ id: number; name: string; pib: string | null }>(
+          `/api/${TENANT}/finansije/suppliers`,
+          { name: searchQuery.trim() },
+        );
+        const s: WizardSupplier = {
+          id: res.data.id, name: res.data.name, pib: res.data.pib,
+          total_invoices_count: 0, total_payments_count: 0, total_debt: 0,
+        };
+        onSupplierCreated?.();
+        pickSupplier(s);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -157,6 +255,11 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
 
   function pickSupplier(s: WizardSupplier) {
     setSelectedSupplier(s);
+    setStep(2);
+  }
+
+  function pickClient(c: WizardClient) {
+    setSelectedClient(c);
     setStep(2);
   }
 
@@ -208,10 +311,12 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
               </div>
               <div>
                 <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#111418", letterSpacing: "-0.01em" }}>
-                  {isEditMode ? "Izmjena fakture" : "Unos"}
+                  {isEditMode ? (isOutbound ? "Izmjena izlazne fakture" : "Izmjena fakture") : "Unos"}
                 </h2>
                 <p style={{ margin: "3px 0 0", fontSize: 13, color: "#64748b" }}>
-                  {isEditMode ? `#${editInvoice?.invoice_number ?? ""}` : "Finansije · Ulazne fakture i uplate"}
+                  {isEditMode
+                    ? `#${isOutbound ? (editOutboundInvoice?.invoice_number ?? "") : (editInvoice?.invoice_number ?? "")}`
+                    : isOutbound ? "Finansije · Izlazne fakture i naplate" : "Finansije · Ulazne fakture i uplate"}
                 </p>
               </div>
             </div>
@@ -230,7 +335,7 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
 
           {/* ── Step indicator ── */}
           <div style={{ padding: "14px 28px 0", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-            {STEP_LABELS.map((label, i) => {
+            {(isOutbound ? STEP_LABELS_OUTBOUND : STEP_LABELS_INBOUND).map((label, i) => {
               const n = i + 1;
               const active = step === n;
               const done   = step > n;
@@ -260,7 +365,7 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
                       {label}
                     </span>
                   </div>
-                  {n < STEP_LABELS.length && (
+                  {n < (isOutbound ? STEP_LABELS_OUTBOUND : STEP_LABELS_INBOUND).length && (
                     <div style={{
                       flex: 1, height: 1.5,
                       background: step > n ? "var(--green)" : "#e5e7eb",
@@ -287,7 +392,7 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
                   <input
                     ref={searchRef}
                     type="text"
-                    placeholder="Ukucaj ime firme..."
+                    placeholder={isOutbound ? "Unesite naziv klijenta ili PIB..." : "Ukucaj ime firme..."}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     autoFocus
@@ -306,55 +411,61 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
               </div>
 
               <div style={{ flex: 1, overflowY: "auto", borderTop: "1px solid #f1f5f9" }}>
-                {filtered.length === 0 && !showQuickAdd && (
+                {isOutbound && liveLoading && (
+                  <div style={{ padding: "28px 28px", textAlign: "center" as const, color: "#9ca3af", fontSize: 13 }}>
+                    Pretraga...
+                  </div>
+                )}
+                {(!isOutbound || !liveLoading) && filtered.length === 0 && !showQuickAdd && (
                   <div style={{ padding: "36px 28px", textAlign: "center" as const, color: "#9ca3af", fontSize: 14 }}>
-                    Nema rezultata
+                    {isOutbound && !searchQuery.trim() ? "Počnite kucati naziv klijenta ili PIB..." : "Nema rezultata"}
                   </div>
                 )}
 
-                {filtered.map((s) => {
-                  const hov = hoveredId === s.id;
-                  return (
-                    <div
-                      key={s.id}
-                      onClick={() => pickSupplier(s)}
-                      onMouseEnter={() => setHoveredId(s.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                      style={{
-                        padding: "12px 28px",
-                        display: "flex", justifyContent: "space-between", alignItems: "center",
-                        borderBottom: "1px solid #f8fafc",
-                        cursor: "pointer",
-                        background: hov ? "#f9fafb" : "transparent",
-                        transition: "background .1s",
-                      }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#111418", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {s.name}
+                {(!isOutbound || !liveLoading) && (isOutbound
+                  ? displayClients.map((c) => {
+                      const hov = hoveredId === c.id;
+                      return (
+                        <div key={c.id} onClick={() => pickClient(c)}
+                          onMouseEnter={() => setHoveredId(c.id)} onMouseLeave={() => setHoveredId(null)}
+                          style={{ padding: "12px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f8fafc", cursor: "pointer", background: hov ? "#f9fafb" : "transparent", transition: "background .1s" }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#111418", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+                            {c.pib && <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 2 }}>PIB: {c.pib}</div>}
+                          </div>
+                          {hov && (
+                            <div style={{ marginLeft: 10, flexShrink: 0, color: "#9ca3af" }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+                            </div>
+                          )}
                         </div>
-                        <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 2 }}>
-                          {s.total_invoices_count} f · {s.total_payments_count} u
+                      );
+                    })
+                  : filteredSuppliers.map((s) => {
+                      const hov = hoveredId === s.id;
+                      return (
+                        <div key={s.id} onClick={() => pickSupplier(s)}
+                          onMouseEnter={() => setHoveredId(s.id)} onMouseLeave={() => setHoveredId(null)}
+                          style={{ padding: "12px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #f8fafc", cursor: "pointer", background: hov ? "#f9fafb" : "transparent", transition: "background .1s" }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#111418", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+                            <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 2 }}>{s.total_invoices_count} f · {s.total_payments_count} u</div>
+                          </div>
+                          {s.total_debt > 0.005 && (
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "#dc2626", whiteSpace: "nowrap", flexShrink: 0, marginLeft: 14 }}>-{fmt(s.total_debt)} RSD</div>
+                          )}
+                          {hov && (
+                            <div style={{ marginLeft: 10, flexShrink: 0, color: "#9ca3af" }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                      {s.total_debt > 0.005 && (
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#dc2626", whiteSpace: "nowrap", flexShrink: 0, marginLeft: 14 }}>
-                          -{fmt(s.total_debt)} RSD
-                        </div>
-                      )}
-                      {hov && (
-                        <div style={{ marginLeft: 10, flexShrink: 0, color: "#9ca3af" }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M9 18l6-6-6-6" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      );
+                    })
+                )}
 
                 {/* Quick add */}
-                {showQuickAdd && (
+                {showQuickAdd && !liveLoading && (
                   <div
                     onClick={handleQuickAdd}
                     onMouseEnter={() => setHoveredId("add")}
@@ -387,7 +498,7 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
                     </div>
                     <div>
                       <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--green)" }}>
-                        Dodaj novog dobavljača
+                        {isOutbound ? "Dodaj novog klijenta" : "Dodaj novog dobavljača"}
                       </div>
                       <div style={{ fontSize: 12, color: "#64748b", marginTop: 1 }}>
                         &ldquo;{searchQuery.trim()}&rdquo;
@@ -405,7 +516,7 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
               <div style={{ margin: "0 0 16px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
                 <span style={{ fontSize: 13.5, color: "#64748b" }}>
                   Odaberi tip unosa za{" "}
-                  <span style={{ fontWeight: 700, color: "#111418" }}>{selectedSupplier?.name}</span>
+                  <span style={{ fontWeight: 700, color: "#111418" }}>{isOutbound ? selectedClient?.name : selectedSupplier?.name}</span>
                 </span>
                 {!isEditMode && (
                   <button
@@ -420,7 +531,7 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
                 )}
               </div>
               <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
-                {ENTRY_TYPES.map(({ key, label, subtitle, icon }) => {
+                {(isOutbound ? OUTBOUND_ENTRY_TYPES : ENTRY_TYPES).map(({ key, label, subtitle, icon }) => {
                   const sel = selectedType === key;
                   const hov = hoveredType === key;
                   return (
@@ -467,8 +578,48 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
             </div>
           )}
 
+          {/* ── STEP 3: Izlazna faktura / Gotovinski račun (outbound) ── */}
+          {step === 3 && (selectedType === "faktura" || selectedType === "gotovinska") && selectedClient && isOutbound && (
+            <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+              <WizardOutboundInvoiceForm
+                client={selectedClient}
+                formId="wizard-outbound-form"
+                editInvoice={editOutboundInvoice ?? null}
+                initialIsCash={selectedType === "gotovinska"}
+                onSaved={() => { onDocumentSaved?.(); onClose(); }}
+                onSavingChange={setInvSaving}
+                onErrorChange={setInvError}
+              />
+              {invError && (
+                <div style={{ marginTop: 12, padding: "9px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, fontSize: 13, color: "#dc2626" }}>
+                  {invError}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── STEP 3: Evidencija priliva (outbound uplata) ── */}
+          {step === 3 && selectedType === "uplata" && isOutbound && (
+            <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ padding: "20px 22px", borderRadius: 14, border: "1.5px solid var(--green)", background: "#f0fdf4", display: "flex", alignItems: "flex-start", gap: 16 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 12, background: "var(--green-soft)", color: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 10 12 5 7 10" /><line x1="12" y1="5" x2="12" y2="17" />
+                  </svg>
+                </div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: "#111418", marginBottom: 4 }}>Evidencija priliva</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "#374151" }}>{selectedClient?.name}</div>
+                  <div style={{ fontSize: 12.5, color: "#64748b", marginTop: 6, lineHeight: 1.55 }}>
+                    Uplaćeni iznos možete evidentirati direktno na fakturi klijenta u tabu &ldquo;Fakture&rdquo;.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── STEP 3: Ulazna faktura — inline forma ── */}
-          {step === 3 && selectedType === "faktura" && selectedSupplier && (
+          {step === 3 && selectedType === "faktura" && selectedSupplier && !isOutbound && (
             <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
               <WizardInvoiceForm
                 supplier={selectedSupplier}
@@ -486,8 +637,8 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
             </div>
           )}
 
-          {/* ── STEP 3: Evidencija uplate — bridge ── */}
-          {step === 3 && selectedType === "uplata" && (
+          {/* ── STEP 3: Evidencija uplate — bridge (inbound) ── */}
+          {step === 3 && selectedType === "uplata" && !isOutbound && (
             <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ padding: "20px 22px", borderRadius: 14, border: `1.5px solid var(--green)`, background: "#f0fdf4", display: "flex", alignItems: "flex-start", gap: 16 }}>
                 <div style={{ width: 48, height: 48, borderRadius: 12, background: "var(--green-soft)", color: "var(--green)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -514,8 +665,8 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
             </div>
           )}
 
-          {/* ── STEP 3: Cash receipt form ── */}
-          {step === 3 && selectedType === "gotovinska" && selectedSupplier && (
+          {/* ── STEP 3: Cash receipt form (inbound) ── */}
+          {step === 3 && selectedType === "gotovinska" && selectedSupplier && !isOutbound && (
             <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
               <CashReceiptForm
                 supplier={selectedSupplier}
@@ -569,8 +720,20 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
                 Zatvori
               </button>
 
-              {/* Step 3 — faktura: submit WizardInvoiceForm */}
-              {step === 3 && selectedType === "faktura" && (
+              {/* Step 3 — outbound faktura/gotovinska: submit WizardOutboundInvoiceForm */}
+              {step === 3 && (selectedType === "faktura" || selectedType === "gotovinska") && isOutbound && (
+                <button type="submit" form="wizard-outbound-form" disabled={invSaving}
+                  style={{ padding: "9px 22px", border: "none", borderRadius: 10, background: invSaving ? "#4ade80" : "var(--green)", color: "#fff", fontSize: 14, fontWeight: 600, cursor: invSaving ? "wait" : "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, transition: "background .12s" }}>
+                  {invSaving ? (
+                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "wiz-spin .7s linear infinite" }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Čuvanje...</>
+                  ) : (
+                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>{isEditMode ? "Sačuvaj izmjene" : "Sačuvaj fakturu"}</>
+                  )}
+                </button>
+              )}
+
+              {/* Step 3 — inbound faktura: submit WizardInvoiceForm */}
+              {step === 3 && selectedType === "faktura" && !isOutbound && (
                 <button
                   type="submit"
                   form="wizard-invoice-form"
@@ -591,8 +754,8 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
                 </button>
               )}
 
-              {/* Step 3 — uplata: handoff to NewPaymentModal */}
-              {step === 3 && selectedType === "uplata" && (
+              {/* Step 3 — inbound uplata: handoff to NewPaymentModal */}
+              {step === 3 && selectedType === "uplata" && !isOutbound && (
                 <button
                   type="button"
                   onClick={() => { if (selectedSupplier) onOpenPaymentModal?.(selectedSupplier); onClose(); }}
@@ -605,8 +768,8 @@ export default function DocumentEntryWizard({ suppliers, onClose, onSupplierCrea
                 </button>
               )}
 
-              {/* Step 3 — gotovinska: submit CashReceiptForm */}
-              {step === 3 && selectedType === "gotovinska" && (
+              {/* Step 3 — inbound gotovinska: submit CashReceiptForm */}
+              {step === 3 && selectedType === "gotovinska" && !isOutbound && (
                 <button
                   type="submit"
                   form="wizard-cash-receipt"

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import DatePicker from "@/components/ui/DatePicker";
 import api from "@/lib/axios";
 
@@ -14,13 +14,28 @@ export interface UnpaidInvoice {
   total_amount: number;
 }
 
+export interface EditingPaymentData {
+  id: number;
+  payment_date: string;
+  amount: number;
+  supplier_id: number;
+  supplier_name: string;
+  incoming_invoice_id: number | null;
+  invoice_number: string;
+  description: string | null;
+  note: string | null;
+  payment_number: string | null;
+}
+
 interface Props {
-  supplierId: number;
-  supplierName: string;
-  nextPaymentNumber: number;
+  supplierId?: number;
+  supplierName?: string;
+  nextPaymentNumber?: number;
   unpaidInvoices: UnpaidInvoice[];
+  editingPayment?: EditingPaymentData;
   onClose: () => void;
   onSuccess: () => void;
+  onDelete?: () => void;
 }
 
 const labelStyle: React.CSSProperties = {
@@ -56,15 +71,29 @@ export default function NewPaymentModal({
   supplierName,
   nextPaymentNumber,
   unpaidInvoices,
+  editingPayment,
   onClose,
   onSuccess,
+  onDelete,
 }: Props) {
+  const isEditMode = editingPayment != null;
+
   const [visible,     setVisible]     = useState(false);
-  const [invoiceId,   setInvoiceId]   = useState<number | "">("");
-  const [paymentDate, setPaymentDate] = useState(TODAY);
-  const [amount,      setAmount]      = useState("");
-  const [description, setDescription] = useState("");
-  const [note,        setNote]        = useState("");
+  const [invoiceId,   setInvoiceId]   = useState<number | "">(() =>
+    isEditMode ? (editingPayment.incoming_invoice_id ?? "") : ""
+  );
+  const [paymentDate, setPaymentDate] = useState(() =>
+    isEditMode ? (editingPayment.payment_date ?? TODAY) : TODAY
+  );
+  const [amount,      setAmount]      = useState(() =>
+    isEditMode ? editingPayment.amount.toFixed(2) : ""
+  );
+  const [description, setDescription] = useState(() =>
+    isEditMode ? (editingPayment.description ?? "") : ""
+  );
+  const [note,        setNote]        = useState(() =>
+    isEditMode ? (editingPayment.note ?? "") : ""
+  );
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
@@ -83,13 +112,27 @@ export default function NewPaymentModal({
     return () => document.removeEventListener("keydown", handler);
   }, [handleClose]);
 
+  // In edit mode, add the currently linked invoice to the options if it's not already in the unpaid list
+  const invoiceOptions = useMemo<UnpaidInvoice[]>(() => {
+    if (!isEditMode || !editingPayment?.incoming_invoice_id) return unpaidInvoices;
+    const alreadyIn = unpaidInvoices.some((i) => i.id === editingPayment.incoming_invoice_id);
+    if (alreadyIn) return unpaidInvoices;
+    const label = editingPayment.invoice_number !== "—"
+      ? editingPayment.invoice_number
+      : `#${editingPayment.incoming_invoice_id}`;
+    return [
+      { id: editingPayment.incoming_invoice_id!, invoice_number: label, remaining_amount: 0, total_amount: 0 },
+      ...unpaidInvoices,
+    ];
+  }, [unpaidInvoices, isEditMode, editingPayment]);
+
   function handleInvoiceChange(val: string) {
     const id = val ? parseInt(val, 10) : "";
     setInvoiceId(id);
     if (id) {
-      const inv = unpaidInvoices.find((i) => i.id === id);
-      if (inv) setAmount(inv.remaining_amount.toFixed(2));
-    } else {
+      const inv = invoiceOptions.find((i) => i.id === id);
+      if (inv && inv.remaining_amount > 0) setAmount(inv.remaining_amount.toFixed(2));
+    } else if (!isEditMode) {
       setAmount("");
     }
   }
@@ -105,16 +148,31 @@ export default function NewPaymentModal({
       setError("Datum je obavezan.");
       return;
     }
+    if (!isEditMode && !invoiceId) {
+      setError("Faktura je obavezna.");
+      return;
+    }
+
     setSaving(true);
     try {
-      await api.post(`/api/${TENANT}/finansije/uplate`, {
-        supplier_id:          supplierId,
-        incoming_invoice_id:  invoiceId || null,
-        payment_date:         paymentDate,
-        amount:               parsed,
-        description:          description.trim() || null,
-        note:                 note.trim() || null,
-      });
+      if (isEditMode) {
+        await api.put(`/api/${TENANT}/finansije/uplate/${editingPayment!.id}`, {
+          incoming_invoice_id: invoiceId || null,
+          payment_date:        paymentDate,
+          amount:              parsed,
+          description:         description.trim() || null,
+          note:                note.trim() || null,
+        });
+      } else {
+        await api.post(`/api/${TENANT}/finansije/uplate`, {
+          supplier_id:          supplierId!,
+          incoming_invoice_id:  invoiceId || null,
+          payment_date:         paymentDate,
+          amount:               parsed,
+          description:          description.trim() || null,
+          note:                 note.trim() || null,
+        });
+      }
       onSuccess();
       handleClose();
     } catch (e: unknown) {
@@ -124,7 +182,14 @@ export default function NewPaymentModal({
     }
   }
 
-  const selectedInvoice = invoiceId ? unpaidInvoices.find((i) => i.id === invoiceId) : null;
+  const selectedInvoice = invoiceId
+    ? invoiceOptions.find((i) => i.id === invoiceId)
+    : null;
+
+  const displaySupplierName = isEditMode ? editingPayment!.supplier_name : (supplierName ?? "");
+  const displayPaymentNumber = isEditMode
+    ? (editingPayment!.payment_number ?? "—")
+    : (nextPaymentNumber ?? "—");
 
   return (
     <div
@@ -159,10 +224,10 @@ export default function NewPaymentModal({
         <div style={{ padding: "18px 22px 14px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
             <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: "#059669", marginBottom: 5 }}>
-              {supplierName}
+              {displaySupplierName}
             </div>
             <div style={{ fontSize: 19, fontWeight: 700, color: "#111418", letterSpacing: "-0.01em" }}>
-              Nova uplata
+              {isEditMode ? "Izmijeni uplatu" : "Nova uplata"}
             </div>
           </div>
           <button
@@ -185,7 +250,7 @@ export default function NewPaymentModal({
               <label style={labelStyle}>RB</label>
               <input
                 type="text"
-                value={nextPaymentNumber}
+                value={displayPaymentNumber}
                 disabled
                 style={{ ...inputStyle, background: "#f9fafb", color: "#9ca3af", cursor: "not-allowed" }}
               />
@@ -199,8 +264,11 @@ export default function NewPaymentModal({
           {/* Row 2: VEZA SA FAKTUROM */}
           <div>
             <label style={labelStyle}>
-              VEZA SA FAKTUROM{" "}
-              <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(opciono)</span>
+              VEZA SA FAKTUROM
+              {isEditMode && (
+                <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>{" "}(opciono)</span>
+              )}
+              {!isEditMode && <span style={{ color: "#dc2626", marginLeft: 2 }}>*</span>}
             </label>
             <div style={{ position: "relative" }}>
               <select
@@ -216,10 +284,10 @@ export default function NewPaymentModal({
                 onFocus={(e) => (e.target.style.borderColor = "#059669")}
                 onBlur={(e)  => (e.target.style.borderColor = "#e5e7eb")}
               >
-                <option value="">— Bez veze sa fakturom —</option>
-                {unpaidInvoices.map((inv) => (
+                <option value="">— Odaberite fakturu —</option>
+                {invoiceOptions.map((inv) => (
                   <option key={inv.id} value={inv.id}>
-                    {inv.invoice_number} · dug {fmt(inv.remaining_amount)} RSD
+                    {inv.invoice_number}{inv.remaining_amount > 0 ? ` · dug ${fmt(inv.remaining_amount)} RSD` : ""}
                   </option>
                 ))}
               </select>
@@ -231,7 +299,7 @@ export default function NewPaymentModal({
                 <path d="M6 9l6 6 6-6" />
               </svg>
             </div>
-            {selectedInvoice && (
+            {selectedInvoice && selectedInvoice.remaining_amount > 0 && (
               <div style={{ marginTop: 6, padding: "7px 10px", background: "#f0fdf4", borderRadius: 7, border: "1px solid #bbf7d0", fontSize: 12.5, color: "#059669", display: "flex", justifyContent: "space-between" }}>
                 <span>Preostali dug</span>
                 <span style={{ fontWeight: 700 }}>{fmt(selectedInvoice.remaining_amount)} RSD</span>
@@ -297,6 +365,21 @@ export default function NewPaymentModal({
 
         {/* Footer */}
         <div style={{ padding: "12px 22px 20px", borderTop: "1px solid #f3f4f6", display: "flex", gap: 10 }}>
+          {isEditMode && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={saving}
+              title="Obriši uplatu"
+              style={{ width: 40, height: 40, borderRadius: 10, border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fee2e2"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#fef2f2"; }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6M9 6V4h6v2" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             onClick={handleClose}
@@ -328,7 +411,7 @@ export default function NewPaymentModal({
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M20 6L9 17l-5-5" />
                 </svg>
-                Sačuvaj
+                {isEditMode ? "Sačuvaj izmene" : "Sačuvaj"}
               </>
             )}
           </button>

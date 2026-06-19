@@ -1,7 +1,6 @@
 export interface Contract {
   id: number;
   contract_date: string;
-  contract_end_date: string | null;
   contract_type: string;
   contracting_party: string;
   value: string | null;
@@ -12,7 +11,6 @@ export interface Contract {
 
 export interface ContractFormData {
   contract_date: string;
-  contract_end_date: string;
   contract_type: string;
   contracting_party: string;
   value: string;
@@ -32,7 +30,6 @@ export const CONTRACT_TYPES = [
 
 export const EMPTY_CONTRACT_FORM: ContractFormData = {
   contract_date: "",
-  contract_end_date: "",
   contract_type: "Ugovor o radu",
   contracting_party: "",
   value: "",

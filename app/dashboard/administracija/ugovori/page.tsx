@@ -33,7 +33,6 @@ function formatValue(val: string | null): string {
 function contractToForm(c: Contract): ContractFormData {
   return {
     contract_date:     c.contract_date,
-    contract_end_date: c.contract_end_date ?? "",
     contract_type:     c.contract_type,
     contracting_party: c.contracting_party,
     value:             c.value ?? "",
@@ -146,16 +145,16 @@ function DeleteConfirm({
   );
 }
 
-// ─── Slide-over Form ─────────────────────────────────────────────────────────
+// ─── Contract Modal ───────────────────────────────────────────────────────────
 
-interface SlideOverProps {
+interface ModalProps {
   open: boolean;
   editing: Contract | null;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) {
+function ContractModal({ open, editing, onClose, onSaved }: ModalProps) {
   const {
     register,
     handleSubmit,
@@ -176,7 +175,6 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
     mutationFn: (data: ContractFormData) => {
       const payload = {
         ...data,
-        contract_end_date: data.contract_end_date === "" ? null : data.contract_end_date,
         value: data.value === "" ? null : data.value,
         note:  data.note  === "" ? null : data.note,
       };
@@ -196,9 +194,9 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
   return (
     <>
       <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
+        @keyframes modalFadeIn {
+          from { opacity: 0; transform: translate(-50%, -48%) scale(.97); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         }
       `}</style>
 
@@ -209,34 +207,56 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
 
       <div
         style={{
-          position: "fixed", top: 0, right: 0, bottom: 0, width: 480,
-          background: "#fff", zIndex: 101,
-          display: "flex", flexDirection: "column",
-          boxShadow: "-8px 0 40px rgba(16,24,40,.14)",
-          animation: "slideInRight .25s cubic-bezier(.32,.72,.27,1)",
+          position: "fixed",
+          top: "50%", left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "min(520px, calc(100vw - 32px))",
+          maxHeight: "calc(100vh - 48px)",
+          background: "#fff",
+          borderRadius: 20,
+          zIndex: 101,
+          boxShadow: "0 24px 64px rgba(16,24,40,.18)",
+          display: "flex",
+          flexDirection: "column",
+          animation: "modalFadeIn .2s cubic-bezier(.32,.72,.27,1)",
         }}
       >
         {/* Header */}
-        <div style={{ padding: "22px 24px 18px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--violet-soft)", color: "var(--violet)", display: "grid", placeItems: "center" }}>
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <div style={{
+          padding: "20px 24px 16px",
+          borderBottom: "1px solid var(--border-soft)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: "var(--violet-soft)", color: "var(--violet)",
+              display: "grid", placeItems: "center", flexShrink: 0,
+            }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" />
                 <path d="M9 8h6M9 12h6M9 16h4" />
               </svg>
             </div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#111418" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#111418", lineHeight: 1.2 }}>
                 {editing ? "Izmijeni ugovor" : "Novi ugovor"}
               </div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 1 }}>
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
                 {editing ? editing.contracting_party : "Unesi podatke o ugovoru"}
               </div>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border)", background: "transparent", cursor: "pointer", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 20 }}
+            style={{
+              width: 32, height: 32, borderRadius: 8,
+              border: "1px solid var(--border)", background: "transparent",
+              cursor: "pointer", display: "grid", placeItems: "center",
+              color: "var(--muted)", fontSize: 20, lineHeight: 1, flexShrink: 0,
+            }}
           >
             ×
           </button>
@@ -246,9 +266,9 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
         <form
           id="contract-form"
           onSubmit={handleSubmit((d) => saveMut.mutate(d))}
-          style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}
+          style={{ overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}
         >
-          {/* Datumi */}
+          {/* Datum ugovora + Tip ugovora */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={labelStyle}>Datum ugovora</label>
@@ -263,37 +283,21 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
               {errors.contract_date && <p style={errStyle}>{errors.contract_date.message}</p>}
             </div>
             <div>
-              <label style={labelStyle}>
-                Datum isteka{" "}
-                <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opcionalno)</span>
-              </label>
+              <label style={labelStyle}>Tip ugovora</label>
               <Controller
-                name="contract_end_date"
+                name="contract_type"
                 control={control}
+                rules={{ required: "Tip ugovora je obavezan" }}
                 render={({ field }) => (
-                  <DatePicker value={field.value} onChange={field.onChange} />
+                  <FormDropdown
+                    value={field.value}
+                    onChange={field.onChange}
+                    options={CONTRACT_TYPES.map((t) => ({ value: t, label: t }))}
+                  />
                 )}
               />
-              {errors.contract_end_date && <p style={errStyle}>{errors.contract_end_date.message}</p>}
+              {errors.contract_type && <p style={errStyle}>{errors.contract_type.message}</p>}
             </div>
-          </div>
-
-          {/* Tip ugovora */}
-          <div>
-            <label style={labelStyle}>Tip ugovora</label>
-            <Controller
-              name="contract_type"
-              control={control}
-              rules={{ required: "Tip ugovora je obavezan" }}
-              render={({ field }) => (
-                <FormDropdown
-                  value={field.value}
-                  onChange={field.onChange}
-                  options={CONTRACT_TYPES.map((t) => ({ value: t, label: t }))}
-                />
-              )}
-            />
-            {errors.contract_type && <p style={errStyle}>{errors.contract_type.message}</p>}
           </div>
 
           {/* Ugovorna strana */}
@@ -310,7 +314,7 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
             {errors.contracting_party && <p style={errStyle}>{errors.contracting_party.message}</p>}
           </div>
 
-          {/* Vrednost */}
+          {/* Vrijednost */}
           <div>
             <label style={labelStyle}>
               Vrijednost (RSD){" "}
@@ -338,7 +342,7 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
               <span style={{ fontWeight: 400, color: "var(--muted)" }}>(opcionalno)</span>
             </label>
             <textarea
-              rows={4}
+              rows={3}
               placeholder="Detalji, uslovi, napomene..."
               {...register("note")}
               style={{ ...inputStyle, resize: "vertical", lineHeight: 1.55 }}
@@ -355,11 +359,20 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
         </form>
 
         {/* Footer */}
-        <div style={{ padding: "14px 24px 20px", borderTop: "1px solid var(--border-soft)", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div style={{
+          padding: "14px 24px 20px",
+          borderTop: "1px solid var(--border-soft)",
+          display: "flex", gap: 10, justifyContent: "flex-end",
+          flexShrink: 0,
+        }}>
           <button
             type="button"
             onClick={onClose}
-            style={{ padding: "9px 18px", border: "1px solid var(--border)", borderRadius: 9, background: "#fff", color: "#374151", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
+            style={{
+              padding: "9px 18px", border: "1px solid var(--border)", borderRadius: 9,
+              background: "#fff", color: "#374151", fontSize: 14, fontWeight: 500,
+              cursor: "pointer", fontFamily: "inherit",
+            }}
           >
             Odustani
           </button>
@@ -375,7 +388,7 @@ function ContractSlideOver({ open, editing, onClose, onSaved }: SlideOverProps) 
               fontFamily: "inherit",
             }}
           >
-            {isSubmitting || saveMut.isPending ? "Čuvanje..." : editing ? "Sačuvaj izmene" : "Dodaj ugovor"}
+            {isSubmitting || saveMut.isPending ? "Čuvanje..." : editing ? "Sačuvaj izmjene" : "Dodaj ugovor"}
           </button>
         </div>
       </div>
@@ -396,7 +409,7 @@ function SortIndicator({ isActive, direction }: { isActive: boolean; direction: 
 
 export default function UgoвориPage() {
   const qc = useQueryClient();
-  const [slideOpen, setSlideOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Contract | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Contract | null>(null);
 
@@ -418,12 +431,12 @@ export default function UgoвориPage() {
 
   function openAdd() {
     setEditing(null);
-    setSlideOpen(true);
+    setModalOpen(true);
   }
 
   function openEdit(c: Contract) {
     setEditing(c);
-    setSlideOpen(true);
+    setModalOpen(true);
   }
 
   const thStyle: React.CSSProperties = {
@@ -503,7 +516,6 @@ export default function UgoвориPage() {
                   <tr>
                     {([
                       ["contract_date",    "Datum"],
-                      ["contract_end_date","Datum isteka"],
                       ["contract_type",    "Tip ugovora"],
                       ["contracting_party","Ugovorna strana"],
                     ] as const).map(([key, label]) => (
@@ -549,37 +561,6 @@ export default function UgoвориPage() {
                         <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                           {formatDate(c.contract_date)}
                         </span>
-                      </td>
-                      <td style={tdStyle}>
-                        {c.contract_end_date ? (
-                          (() => {
-                            const daysLeft = Math.ceil(
-                              (new Date(c.contract_end_date).getTime() - Date.now()) / 86_400_000
-                            );
-                            const expired  = daysLeft < 0;
-                            const expiring = !expired && daysLeft <= 30;
-                            const color = expired ? "var(--red)" : expiring ? "#d97706" : "#111418";
-                            const dotColor = expired ? "var(--red)" : "#d97706";
-                            return (
-                              <span style={{
-                                display: "inline-flex", alignItems: "center", gap: 5,
-                                fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
-                                color,
-                                fontWeight: expired || expiring ? 600 : 400,
-                              }}>
-                                {(expired || expiring) && (
-                                  <span style={{
-                                    display: "inline-block", width: 7, height: 7,
-                                    borderRadius: "50%", background: dotColor, flexShrink: 0,
-                                  }} />
-                                )}
-                                {formatDate(c.contract_end_date)}
-                              </span>
-                            );
-                          })()
-                        ) : (
-                          <span style={{ color: "var(--muted-2)" }}>—</span>
-                        )}
                       </td>
                       <td style={tdStyle}>
                         <span style={{
@@ -686,11 +667,11 @@ export default function UgoвориPage() {
         )}
       </div>
 
-      {/* Slide-over */}
-      <ContractSlideOver
-        open={slideOpen}
+      {/* Modal */}
+      <ContractModal
+        open={modalOpen}
         editing={editing}
-        onClose={() => setSlideOpen(false)}
+        onClose={() => setModalOpen(false)}
         onSaved={() => {}}
       />
 
