@@ -11,6 +11,7 @@ import {
   IconDoc,
   IconPhone,
   IconBell,
+  IconChart,
   IconCaretSm,
   IconEye,
   IconEyeOff,
@@ -67,11 +68,12 @@ const NAV_ALL: NavItem[] = [
   { id: "pro",  label: "Prodaja",        icon: IconBars,  disabled: true },
   { id: "grad", label: "Gradilište",     icon: IconBuild, disabled: true },
   { id: "adm",  label: "Administracija", icon: IconDoc    },
-  { id: "obv",  label: "Obaveštenja",   icon: IconBell   },
+  { id: "obv",  label: "Obaveštenja",    icon: IconBell   },
+  { id: "izv",  label: "Izveštaji",      icon: IconChart  },
 ];
 
 function getAllowedNavIds(roles: string[]): string[] {
-  if (roles.includes("vlasnik"))              return ["dash", "fin", "pro", "grad", "adm", "obv"];
+  if (roles.includes("vlasnik"))              return ["dash", "fin", "pro", "grad", "adm", "izv"];
   if (roles.includes("administrator"))        return ["adm", "obv"];
   if (roles.includes("menadzer-finansija"))   return ["dash", "fin", "obv"];
   if (roles.includes("menadzer-gradilista"))  return ["dash", "grad", "obv"];
@@ -85,6 +87,7 @@ const NAV_COLORS: Record<string, { bg: string; text: string }> = {
   grad: { bg: "var(--amber-soft)",  text: "var(--amber)"  },
   adm:  { bg: "var(--violet-soft)", text: "var(--violet)" },
   obv:  { bg: "var(--amber-soft)",  text: "var(--amber)"  },
+  izv:  { bg: "var(--brand-soft)",  text: "var(--brand)"  },
 };
 
 const CONTACTS = [
@@ -422,7 +425,7 @@ export default function Sidebar({ activeId, onNav, onClose, isOpen, user, onLogo
             position: "absolute",
             inset: 0,
             zIndex: 0,
-            backdropFilter: "url(#mg-lg-sidebar) blur(36px) saturate(190%)",
+            backdropFilter: "url(#mg-lg-sidebar) blur(1px) saturate(190%)",
             WebkitBackdropFilter: "blur(36px) saturate(190%)",
             background: "rgba(255, 255, 255, 0.16)",
           }}

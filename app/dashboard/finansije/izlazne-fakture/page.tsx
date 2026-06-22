@@ -1801,7 +1801,6 @@ export default function IzlazneFakturePage() {
                             { col: "amount_without_vat" as const, label: "IZNOS"         },
                             { col: "vat_amount"         as const, label: "PDV"           },
                             { col: "total_amount"       as const, label: "UKUPNO"        },
-                            { col: "status"             as const, label: "KNJIŽENJE"     },
                           ]).map(({ col, label }) => {
                             const isActive = sortConfig?.key === col;
                             return (
@@ -1850,18 +1849,6 @@ export default function IzlazneFakturePage() {
                             </td>
                             <td style={{ padding: "10px 12px", fontWeight: 600, color: "#92400e", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" as const }}>
                               {parseFloat(inv.total_amount).toLocaleString("sr-Latn", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td style={{ padding: "10px 12px" }}>
-                              <span style={{
-                                display: "inline-block", padding: "2px 8px", borderRadius: 5, fontSize: 11.5, fontWeight: 600,
-                                ...(inv.status === "unpaid"
-                                  ? { background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }
-                                  : inv.status === "partial"
-                                    ? { background: "#fff7ed", border: "1px solid #fed7aa", color: "#d97706" }
-                                    : { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a" }),
-                              }}>
-                                {inv.status === "unpaid" ? "Čeka" : inv.status === "partial" ? "Djelimično" : "Plaćeno"}
-                              </span>
                             </td>
                           </tr>
                         ))}

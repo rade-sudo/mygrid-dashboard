@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm, Controller } from "react-hook-form";
 import PageShell from "@/components/layout/PageShell";
@@ -163,24 +163,57 @@ function ContractModal({ open, editing, onClose, onSaved }: ModalProps) {
     formState: { errors, isSubmitting },
   } = useForm<ContractFormData>({ defaultValues: EMPTY_CONTRACT_FORM });
 
+  const [selectedFile,  setSelectedFile]  = useState<File | null>(null);
+  const [fileError,     setFileError]     = useState("");
+  const [dropHighlight, setDropHighlight] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (open) {
       reset(editing ? contractToForm(editing) : EMPTY_CONTRACT_FORM);
+      setSelectedFile(null);
+      setFileError("");
     }
   }, [open, editing, reset]);
+
+  function handleFileSelect(f: File) {
+    const allowed = ["application/pdf", "image/jpeg", "image/jpg", "image/png"];
+    if (!allowed.includes(f.type)) {
+      setFileError("Dozvoljeni formati: PDF, JPG, PNG");
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setFileError("Maksimalna veličina fajla je 5 MB");
+      return;
+    }
+    setFileError("");
+    setSelectedFile(f);
+  }
+
+  async function openExistingDoc() {
+    if (!editing?.document_path) return;
+    const r = await api.get(`${BASE}/${editing.id}/document`, { responseType: "blob" });
+    const blob = new Blob([r.data as BlobPart], { type: (r.headers["content-type"] as string) ?? "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    window.open(url, "_blank");
+  }
 
   const qc = useQueryClient();
 
   const saveMut = useMutation({
     mutationFn: (data: ContractFormData) => {
-      const payload = {
-        ...data,
-        value: data.value === "" ? null : data.value,
-        note:  data.note  === "" ? null : data.note,
-      };
+      const fd = new FormData();
+      fd.append("contract_date",     data.contract_date);
+      fd.append("contract_type",     data.contract_type);
+      fd.append("contracting_party", data.contracting_party);
+      if (data.value !== "") fd.append("value", data.value);
+      if (data.note  !== "") fd.append("note",  data.note);
+      if (selectedFile) fd.append("document", selectedFile);
+      if (editing) fd.append("_method", "PUT");
       return editing
-        ? api.put(`${BASE}/${editing.id}`, payload).then((r) => r.data)
-        : api.post(BASE, payload).then((r) => r.data);
+        ? api.post(`${BASE}/${editing.id}`, fd, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data)
+        : api.post(BASE, fd, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["contracts", TENANT] });
@@ -349,6 +382,98 @@ function ContractModal({ open, editing, onClose, onSaved }: ModalProps) {
               onFocus={(e) => (e.target.style.borderColor = "var(--violet)")}
               onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
             />
+          </div>
+
+          {/* Dokument */}
+          <div>
+            <label style={labelStyle}>
+              Dokument ugovora{" "}
+              <span style={{ fontWeight: 400, color: "var(--muted)" }}>(PDF, JPG, PNG — max 5 MB, opcionalno)</span>
+            </label>
+
+            {editing?.document_path && !selectedFile && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 12px", marginBottom: 8,
+                background: "var(--violet-soft)", border: "1px solid rgba(124,58,237,.2)",
+                borderRadius: 9, fontSize: 13,
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--violet)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span style={{ flex: 1, color: "#374151", fontWeight: 500 }}>Dokument već priložen</span>
+                <button
+                  type="button"
+                  onClick={openExistingDoc}
+                  style={{ fontSize: 12, fontWeight: 600, color: "var(--violet)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 6px", fontFamily: "inherit", textDecoration: "underline" }}
+                >
+                  Otvori →
+                </button>
+              </div>
+            )}
+
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDropHighlight(true); }}
+              onDragLeave={() => setDropHighlight(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDropHighlight(false);
+                const f = e.dataTransfer.files[0];
+                if (f) handleFileSelect(f);
+              }}
+              style={{
+                border: `2px dashed ${selectedFile ? "var(--violet)" : fileError ? "var(--red)" : dropHighlight ? "var(--violet)" : "var(--border)"}`,
+                borderRadius: 10, padding: "18px 16px", textAlign: "center", cursor: "pointer",
+                transition: "border-color .15s, background .15s",
+                background: selectedFile ? "var(--violet-soft)" : dropHighlight ? "#f5f0ff" : "#fafafa",
+              }}
+            >
+              {selectedFile ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--violet)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--violet)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {selectedFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedFile(null);
+                      setFileError("");
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    style={{ width: 18, height: 18, borderRadius: "50%", border: "none", background: "rgba(124,58,237,.2)", color: "var(--violet)", cursor: "pointer", fontSize: 13, display: "grid", placeItems: "center", lineHeight: 1, flexShrink: 0 }}
+                  >×</button>
+                </div>
+              ) : (
+                <div>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 6px", display: "block" }}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                    Prevucite fajl ovde ili <span style={{ color: "var(--violet)", fontWeight: 600 }}>kliknite za odabir</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted-2)", marginTop: 3 }}>
+                    {editing?.document_path ? "Odaberite novi fajl da biste zamijenili postojeći" : "PDF, JPG, PNG — do 5 MB"}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFileSelect(f);
+              }}
+            />
+            {fileError && <p style={errStyle}>{fileError}</p>}
           </div>
 
           {saveMut.isError && (
@@ -594,6 +719,40 @@ export default function UgoвориPage() {
                       </td>
                       <td style={{ ...tdStyle, textAlign: "center" }}>
                         <div style={{ display: "inline-flex", gap: 6 }}>
+                          {c.document_path && (
+                            <button
+                              onClick={async () => {
+                                const r = await api.get(`${BASE}/${c.id}/document`, { responseType: "blob" });
+                                const blob = new Blob([r.data as BlobPart], { type: (r.headers["content-type"] as string) ?? "application/octet-stream" });
+                                const url = URL.createObjectURL(blob);
+                                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                                window.open(url, "_blank");
+                              }}
+                              title="Pogledaj dokument"
+                              style={{
+                                width: 32, height: 32, borderRadius: 8,
+                                border: "1px solid var(--border)", background: "#fff",
+                                cursor: "pointer", display: "grid", placeItems: "center",
+                                color: "var(--muted)", transition: "all .12s",
+                              }}
+                              onMouseEnter={(e) => {
+                                const b = e.currentTarget as HTMLButtonElement;
+                                b.style.borderColor = "rgba(124,58,237,.4)";
+                                b.style.color = "var(--violet)";
+                                b.style.background = "var(--violet-soft)";
+                              }}
+                              onMouseLeave={(e) => {
+                                const b = e.currentTarget as HTMLButtonElement;
+                                b.style.borderColor = "var(--border)";
+                                b.style.color = "var(--muted)";
+                                b.style.background = "#fff";
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" />
+                              </svg>
+                            </button>
+                          )}
                           <button
                             onClick={() => openEdit(c)}
                             title="Izmijeni"

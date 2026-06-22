@@ -5,6 +5,7 @@ export interface Contract {
   contracting_party: string;
   value: string | null;
   note: string | null;
+  document_path: string | null;
   created_at: string;
   updated_at: string;
 }

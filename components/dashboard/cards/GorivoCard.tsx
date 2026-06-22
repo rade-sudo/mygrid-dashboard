@@ -3,24 +3,12 @@ import { useState } from "react";
 import CardHead from "@/components/dashboard/CardHead";
 import { IconFuel } from "@/components/ui/icons";
 
-function FuelRow({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "space-between",
-        gap: 12,
-        fontSize: 14.5,
-      }}
-    >
-      <div style={{ color: "#1f2937" }}>{label}</div>
-      <div style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color }}>
-        {value}
-      </div>
-    </div>
-  );
-}
+const INSET_BORDER_SHADOW = [
+  "inset 0 1.5px 0 rgba(255,255,255,0.96)",
+  "inset 1px 0 0 rgba(255,255,255,0.58)",
+  "inset -1px 0 0 rgba(255,255,255,0.28)",
+  "inset 0 -1px 0 rgba(255,255,255,0.16)",
+].join(", ");
 
 export default function GorivoCard() {
   const [hovered, setHovered] = useState(false);
@@ -29,58 +17,73 @@ export default function GorivoCard() {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        background: hovered ? "rgba(255, 255, 255, 0.92)" : "rgba(255, 255, 255, 0.75)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        border: "1px solid rgba(255, 255, 255, 0.2)",
+        position: "relative",
         borderRadius: 16,
-        padding: "20px 22px",
+        overflow: "hidden",
+        isolation: "isolate",
+        minHeight: 360,
         boxShadow: hovered
           ? "0 8px 32px rgba(0,82,255,.12), 0 4px 12px rgba(16,24,40,.08)"
-          : "var(--shadow-card)",
+          : "0 16px 48px rgba(37,99,235,.13), 0 4px 12px rgba(16,24,40,.08)",
         transform: hovered ? "translateY(-2px)" : "none",
-        transition: "transform .2s ease, box-shadow .2s ease, background .2s ease",
-        minHeight: 360,
-        display: "flex",
-        flexDirection: "column",
+        transition: "transform .2s ease, box-shadow .2s ease",
       }}
     >
-      <CardHead icon={IconFuel} color="green" title="Gorivo — maj 2026" />
+      {/* Layer 1 — backdrop blur + liquid glass distortion */}
+      <div style={{
+        position: "absolute", inset: 0, zIndex: 0,
+        backdropFilter: hovered
+          ? "blur(12px)"
+          : "url(#mg-lg-sidebar) blur(3px) saturate(190%)",
+        WebkitBackdropFilter: hovered ? "blur(12px)" : "blur(36px) saturate(190%)",
+        background: hovered ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.16)",
+        transition: "background .2s ease",
+      }} />
 
-      <div
-        style={{
-          fontSize: 36,
-          fontWeight: 700,
-          letterSpacing: "-0.02em",
-          lineHeight: 1.1,
-          marginTop: 2,
-          color: "var(--green)",
-        }}
-      >
-        11.293,64
-        <span style={{ fontSize: 16, color: "var(--muted)", fontWeight: 500, marginLeft: 8, letterSpacing: 0 }}>L</span>
-      </div>
-      <div style={{ color: "var(--text-2)", fontSize: 14, marginTop: 10 }}>
-        Ukupno za mesec · zadnji unos<br />
-        <strong style={{ fontWeight: 600 }}>03.05.2026</strong>
+      {/* Layer 2 — gradient tint */}
+      <div style={{
+        position: "absolute", inset: 0, zIndex: 1,
+        background: "linear-gradient(155deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.10) 55%, rgba(37,99,235,0.05) 100%)",
+        pointerEvents: "none",
+        opacity: hovered ? 0 : 1,
+        transition: "opacity .2s ease",
+      }} />
+
+      {/* Layer 3 — content */}
+      <div style={{
+        position: "relative", zIndex: 2,
+        padding: "20px 22px",
+        display: "flex", flexDirection: "column",
+        height: "100%",
+      }}>
+        <CardHead icon={IconFuel} color="green" title="Gorivo — pregled" />
+
+        <div style={{
+          flex: 1,
+          display: "grid",
+          placeItems: "center",
+          color: "rgba(15,23,42,0.45)",
+          fontSize: 15,
+          textAlign: "center",
+          padding: "18px 8px 24px",
+          lineHeight: 1.6,
+        }}>
+          Modul dolazi uskoro —<br />
+          evidencija goriva biće<br />
+          dostupna ovde.
+        </div>
       </div>
 
-      <div
-        style={{
-          marginTop: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          paddingTop: 14,
-          borderTop: "1px solid var(--border-soft)",
-        }}
-      >
-        <FuelRow label="Dizel" value="5.486,04 L" color="var(--brand)" />
-        <FuelRow label="Dizel X Energy" value="742,13 L" color="var(--amber)" />
-        <FuelRow label="Benzin" value="3.557,66 L" color="var(--red)" />
-        <FuelRow label="Benzin 100" value="950,24 L" color="var(--amber)" />
-        <FuelRow label="Gas" value="557,57 L" color="var(--green)" />
-      </div>
+      {/* Layer 4 — inset prismatic border */}
+      <div style={{
+        position: "absolute", inset: 0, zIndex: 3,
+        borderRadius: "inherit", pointerEvents: "none",
+        border: hovered
+          ? "1px solid rgba(255,255,255,0.2)"
+          : "1px solid rgba(255,255,255,0.52)",
+        boxShadow: hovered ? "none" : INSET_BORDER_SHADOW,
+        transition: "border-color .2s ease, box-shadow .2s ease",
+      }} />
     </div>
   );
 }

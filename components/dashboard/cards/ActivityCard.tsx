@@ -135,7 +135,7 @@ export default function ActivityCard() {
         position: "absolute", inset: 0, zIndex: 0,
         backdropFilter: hovered
           ? "blur(12px)"
-          : "url(#mg-lg-sidebar) blur(36px) saturate(190%)",
+          : "url(#mg-lg-sidebar) blur(3px) saturate(190%)",
         WebkitBackdropFilter: hovered ? "blur(12px)" : "blur(36px) saturate(190%)",
         background: hovered ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.16)",
         transition: "background .2s ease",

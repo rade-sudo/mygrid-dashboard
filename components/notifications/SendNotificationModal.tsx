@@ -136,17 +136,27 @@ export default function SendNotificationModal({
                 flexShrink: 0,
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3z" />
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-              </svg>
+              {isVlasnik ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3z" />
+                  <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
+                </svg>
+              )}
             </div>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: "#111418" }}>
-                Novo obaveštenje
+                {isVlasnik ? "Novo obaveštenje" : "Novi izvještaj"}
               </div>
               <div style={{ fontSize: 12, color: "#8a8f98", marginTop: 1 }}>
-                Pošalji internu poruku
+                {isVlasnik ? "Pošalji internu poruku" : "Šalješ izvještaj direktoru"}
               </div>
             </div>
           </div>
@@ -175,14 +185,14 @@ export default function SendNotificationModal({
           {/* Title */}
           <div>
             <label style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", color: "#7c3aed", marginBottom: 6 }}>
-              Naslov
+              {isVlasnik ? "Naslov" : "Naslov izvještaja"}
             </label>
             <input
               ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               maxLength={255}
-              placeholder="npr. Praznik 1.5. — slobodan dan"
+              placeholder={isVlasnik ? "npr. Praznik 1.5. — slobodan dan" : "npr. Sedmični izvještaj — Administracija"}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               style={{
                 width: "100%",
@@ -204,7 +214,7 @@ export default function SendNotificationModal({
           {/* Message */}
           <div>
             <label style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", color: "#7c3aed", marginBottom: 6 }}>
-              Tekst{" "}
+              {isVlasnik ? "Tekst" : "Sadržaj izvještaja"}{" "}
               <span style={{ fontWeight: 400, color: "#b6bac1", textTransform: "none" }}>
                 (opciono)
               </span>
@@ -212,8 +222,8 @@ export default function SendNotificationModal({
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              placeholder="Detalji obaveštenja..."
+              rows={isVlasnik ? 4 : 6}
+              placeholder={isVlasnik ? "Detalji obaveštenja..." : "Unesite detalje izvještaja, situaciju na terenu, zaključke..."}
               style={{
                 width: "100%",
                 padding: "10px 12px",
@@ -304,7 +314,7 @@ export default function SendNotificationModal({
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
-              Prima: Vlasnik / Direktor
+              Izvještaj se šalje direktno vlasniku
             </div>
           )}
 
@@ -408,7 +418,7 @@ export default function SendNotificationModal({
               letterSpacing: ".02em",
             }}
           >
-            Pošalji obaveštenje
+            {isVlasnik ? "Pošalji obaveštenje" : "Pošalji izvještaj"}
           </button>
         </div>
       </div>

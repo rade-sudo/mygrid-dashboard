@@ -146,7 +146,6 @@ const INVOICE_COLS: { col: keyof InvoiceTableRow; label: string }[] = [
   { col: "sektor",             label: "SEKTOR"       },
   { col: "jedinica",           label: "JEDINICA"     },
   { col: "kategorija",         label: "KATEGORIJA"   },
-  { col: "status",             label: "KNJIŽENJE"    },
 ];
 
 const PAYMENT_COLS: { col: keyof PaymentTableRow; label: string }[] = [
@@ -2918,18 +2917,6 @@ export default function UlazneFakturePage() {
                           {row.kategorija
                             ? <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 5, fontSize: 11.5, fontWeight: 600, background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>{row.kategorija}</span>
                             : <span style={{ color: "#d1d5db" }}>—</span>}
-                        </td>
-                        <td style={{ padding: "10px 12px" }}>
-                          <span style={{
-                            display: "inline-block", padding: "2px 8px", borderRadius: 5, fontSize: 11.5, fontWeight: 600,
-                            ...(row.status === "neplaceno"
-                              ? { background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626" }
-                              : row.status === "delimicno"
-                                ? { background: "#fff7ed", border: "1px solid #fed7aa", color: "#d97706" }
-                                : { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a" }),
-                          }}>
-                            {row.status === "neplaceno" ? "Čeka" : row.status === "delimicno" ? "Djelimično" : "Plaćeno"}
-                          </span>
                         </td>
                       </tr>
                     ))}

@@ -371,7 +371,7 @@ export default function ObavjestenjaPage() {
           <p style={{ margin: "0 0 8px", fontSize: 15, color: "var(--muted)" }}>
             {isVlasnik
               ? "Poruke koje ste poslali i primili."
-              : "Poruke upućene vašem sektoru i firmi."}
+              : "Obavještenja od direktora i izvještaji koje ste poslali."}
           </p>
         </div>
 
@@ -388,7 +388,7 @@ export default function ObavjestenjaPage() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          Napiši obavještenje
+          {isVlasnik ? "Napiši obavještenje" : "Napiši izvještaj"}
         </button>
       </div>
 
@@ -472,12 +472,16 @@ export default function ObavjestenjaPage() {
               <path d="M10 20a2 2 0 0 0 4 0" />
             </svg>
             <p style={{ margin: 0, fontSize: 15, fontWeight: 500 }}>
-              {debouncedSearch ? "Nema obavještenja za tu pretragu" : "Nema obavještenja"}
+              {debouncedSearch
+                ? (isVlasnik ? "Nema obavještenja za tu pretragu" : "Nema izvještaja za tu pretragu")
+                : (isVlasnik ? "Nema obavještenja" : "Nema izvještaja")}
             </p>
             <p style={{ margin: "6px 0 0", fontSize: 13.5 }}>
               {debouncedSearch
                 ? `Nije pronađeno ništa za „${debouncedSearch}".`
-                : "Ovdje će se prikazati poruke upućene vašem sektoru."}
+                : (isVlasnik
+                    ? "Ovdje će se prikazati poruke upućene vašem sektoru."
+                    : "Ovdje će se prikazati obavještenja od direktora i vaši poslani izvještaji.")}
             </p>
           </div>
         ) : (
